@@ -4,7 +4,7 @@ from functools import wraps
 from datetime import datetime
 from flask import Blueprint, render_template, jsonify, request, session, redirect, url_for
 from app import db
-from app.models import User, SystemConfig
+from app.models import User, SystemConfig, CollectedNews
 
 main_bp = Blueprint('main', __name__)
 
@@ -70,6 +70,20 @@ def dashboard():
 def news_crawler():
     """新闻采集页面"""
     return render_template('admin/news.html')
+
+
+@main_bp.route('/admin/data-collect')
+@login_required
+def data_collect():
+    """数据采集管理页面"""
+    return render_template('admin/data_collect.html')
+
+
+@main_bp.route('/admin/data-warehouse')
+@login_required
+def data_warehouse():
+    """数据仓库管理页面"""
+    return render_template('admin/data_warehouse.html')
 
 
 @main_bp.route('/admin/users')
@@ -294,62 +308,418 @@ def api_save_settings():
 @login_required
 def api_search_news():
     """
-    搜索新闻接口
+    搜索新闻接口（支持多数据源）
 
-    GET请求参数:
-        - keyword: 搜索关键字（必填）
-        - page: 页码，默认1（与count二选一）
-        - count: 目标获取数量，设置后自动翻页获取
-
-    POST请求JSON:
+    请求参数:
         - keyword: 搜索关键字（必填）
         - page: 页码，默认1
-        - count: 目标获取数量
+        - count: 目标获取数量，设置后自动翻页获取
+        - source: 数据源，可选值: baidu(默认), 360kuai
 
     返回数据格式:
         {
             "code": 0,
             "msg": "success",
-            "data": [
-                {
-                    "title": "新闻标题",
-                    "summary": "新闻概要",
-                    "cover": "封面图片URL",
-                    "url": "原始URL",
-                    "source": "来源"
-                },
-                ...
-            ]
+            "source": "baidu",
+            "data": [...]
         }
     """
-    from app.crawler import search_news
-
     # 支持GET和POST两种方式
     if request.method == 'POST':
         data = request.get_json() or {}
         keyword = data.get('keyword', '').strip()
         page = data.get('page', 1)
-        count = data.get('count')  # 目标数量
+        count = data.get('count')
+        source = data.get('source', 'baidu')
     else:
         keyword = request.args.get('keyword', '').strip()
         page = request.args.get('page', 1, type=int)
-        count = request.args.get('count', type=int)  # 目标数量
+        count = request.args.get('count', type=int)
+        source = request.args.get('source', 'baidu')
 
     if not keyword:
         return jsonify({'code': 1, 'msg': '请输入搜索关键字'})
 
     try:
-        # 如果指定了 count，则批量获取；否则按页码获取
-        if count is not None:
-            news_list = search_news(keyword, count=count)
+        # 根据数据源选择爬虫
+        if source == '360kuai':
+            from app.crawler_360kuai import search_360kuai_news
+            if count is not None:
+                news_list = search_360kuai_news(keyword, count=count)
+            else:
+                news_list = search_360kuai_news(keyword, page=page)
+            source_name = '360新闻'
         else:
-            news_list = search_news(keyword, page=page)
+            from app.crawler import search_news
+            if count is not None:
+                news_list = search_news(keyword, count=count)
+            else:
+                news_list = search_news(keyword, page=page)
+            source_name = '百度新闻'
 
         return jsonify({
             'code': 0,
             'msg': 'success',
+            'source': source,
+            'source_name': source_name,
             'count': len(news_list),
             'data': news_list
         })
     except Exception as e:
         return jsonify({'code': 1, 'msg': f'抓取失败: {str(e)}'})
+
+
+# ============ 数据采集管理API ============
+
+@main_bp.route('/api/collect/deep', methods=['POST'])
+@login_required
+def api_deep_collect():
+    """
+    深度采集单条新闻
+    请求参数: { url: "新闻原始URL" }
+    """
+    from app.crawler import deep_collect
+
+    data = request.get_json() or {}
+    url = data.get('url', '').strip()
+
+    if not url:
+        return jsonify({'code': 1, 'msg': '请提供新闻URL'})
+
+    try:
+        result = deep_collect(url)
+        return jsonify({
+            'code': 0,
+            'msg': 'success',
+            'data': result
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'深度采集失败: {str(e)}'})
+
+
+@main_bp.route('/api/collect/save', methods=['POST'])
+@login_required
+def api_save_news():
+    """
+    保存单条采集数据到数据库
+    """
+    data = request.get_json() or {}
+
+    # 必填字段验证
+    title = data.get('title', '').strip()
+    url = data.get('url', '').strip()
+
+    if not title or not url:
+        return jsonify({'code': 1, 'msg': '标题和URL不能为空'})
+
+    # 检查是否已存在
+    existing = CollectedNews.query.filter_by(url=url).first()
+    if existing:
+        return jsonify({'code': 1, 'msg': '该新闻已存在于数据库中'})
+
+    try:
+        news = CollectedNews(
+            title=title,
+            summary=data.get('summary', ''),
+            cover=data.get('cover', ''),
+            url=url,
+            source=data.get('source', ''),
+            keyword=data.get('keyword', ''),
+            content=data.get('content', ''),
+            publish_time=data.get('publish_time', ''),
+            author=data.get('author', ''),
+            deep_collected=data.get('deep_collected', False),
+            collected_by=session.get('user_id')
+        )
+        db.session.add(news)
+        db.session.commit()
+
+        return jsonify({'code': 0, 'msg': '保存成功', 'data': news.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'保存失败: {str(e)}'})
+
+
+@main_bp.route('/api/collect/save-batch', methods=['POST'])
+@login_required
+def api_save_news_batch():
+    """
+    批量保存采集数据到数据库
+    请求参数: { items: [...] }
+    """
+    data = request.get_json() or {}
+    items = data.get('items', [])
+
+    if not items:
+        return jsonify({'code': 1, 'msg': '没有要保存的数据'})
+
+    saved_count = 0
+    skipped_count = 0
+    errors = []
+
+    for item in items:
+        title = item.get('title', '').strip()
+        url = item.get('url', '').strip()
+
+        if not title or not url:
+            skipped_count += 1
+            continue
+
+        # 检查是否已存在
+        if CollectedNews.query.filter_by(url=url).first():
+            skipped_count += 1
+            continue
+
+        try:
+            news = CollectedNews(
+                title=title,
+                summary=item.get('summary', ''),
+                cover=item.get('cover', ''),
+                url=url,
+                source=item.get('source', ''),
+                keyword=item.get('keyword', ''),
+                content=item.get('content', ''),
+                publish_time=item.get('publish_time', ''),
+                author=item.get('author', ''),
+                deep_collected=item.get('deep_collected', False),
+                collected_by=session.get('user_id')
+            )
+            db.session.add(news)
+            saved_count += 1
+        except Exception as e:
+            errors.append(str(e))
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'批量保存失败: {str(e)}'})
+
+    return jsonify({
+        'code': 0,
+        'msg': f'保存完成：成功 {saved_count} 条，跳过 {skipped_count} 条',
+        'data': {
+            'saved': saved_count,
+            'skipped': skipped_count
+        }
+    })
+
+
+@main_bp.route('/api/collect/list', methods=['GET'])
+@login_required
+def api_get_collected_news():
+    """
+    获取已保存的采集数据列表
+    """
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    keyword = request.args.get('keyword', '')
+
+    query = CollectedNews.query
+
+    if keyword:
+        query = query.filter(
+            db.or_(
+                CollectedNews.title.like(f'%{keyword}%'),
+                CollectedNews.keyword.like(f'%{keyword}%')
+            )
+        )
+
+    pagination = query.order_by(CollectedNews.created_at.desc()).paginate(
+        page=page, per_page=limit, error_out=False
+    )
+
+    return jsonify({
+        'code': 0,
+        'count': pagination.total,
+        'data': [n.to_dict() for n in pagination.items]
+    })
+
+
+@main_bp.route('/api/collect/<int:news_id>', methods=['DELETE'])
+@login_required
+def api_delete_collected_news(news_id):
+    """
+    删除已保存的采集数据
+    """
+    news = CollectedNews.query.get(news_id)
+    if not news:
+        return jsonify({'code': 1, 'msg': '数据不存在'})
+
+    try:
+        db.session.delete(news)
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': '删除成功'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'删除失败: {str(e)}'})
+
+
+@main_bp.route('/api/collect/<int:news_id>', methods=['GET'])
+@login_required
+def api_get_collected_news_detail(news_id):
+    """
+    获取单条采集数据详情
+    """
+    news = CollectedNews.query.get(news_id)
+    if not news:
+        return jsonify({'code': 1, 'msg': '数据不存在'})
+
+    return jsonify({'code': 0, 'data': news.to_dict()})
+
+
+# ============ 数据仓库管理API ============
+
+@main_bp.route('/api/warehouse/list', methods=['GET'])
+@login_required
+def api_warehouse_list():
+    """
+    获取数据仓库列表（支持分页、搜索、筛选）
+    """
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    keyword = request.args.get('keyword', '').strip()
+    source = request.args.get('source', '').strip()
+    deep_collected = request.args.get('deep_collected', '').strip()
+
+    query = CollectedNews.query
+
+    # 关键词搜索
+    if keyword:
+        query = query.filter(
+            db.or_(
+                CollectedNews.title.like(f'%{keyword}%'),
+                CollectedNews.keyword.like(f'%{keyword}%'),
+                CollectedNews.summary.like(f'%{keyword}%')
+            )
+        )
+
+    # 来源筛选
+    if source:
+        query = query.filter(CollectedNews.source == source)
+
+    # 深度采集状态筛选
+    if deep_collected:
+        query = query.filter(CollectedNews.deep_collected == (deep_collected == '1'))
+
+    # 分页
+    pagination = query.order_by(CollectedNews.created_at.desc()).paginate(
+        page=page, per_page=limit, error_out=False
+    )
+
+    return jsonify({
+        'code': 0,
+        'count': pagination.total,
+        'data': [n.to_dict() for n in pagination.items]
+    })
+
+
+@main_bp.route('/api/warehouse/stats', methods=['GET'])
+@login_required
+def api_warehouse_stats():
+    """
+    获取数据仓库统计信息
+    """
+    from sqlalchemy import func
+    from datetime import datetime, timedelta
+
+    # 总数
+    total = CollectedNews.query.count()
+
+    # 已深度采集数
+    deep_collected = CollectedNews.query.filter_by(deep_collected=True).count()
+
+    # 今日新增
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = CollectedNews.query.filter(CollectedNews.created_at >= today).count()
+
+    # 数据来源数量
+    sources = db.session.query(func.count(func.distinct(CollectedNews.source))).scalar() or 0
+
+    return jsonify({
+        'code': 0,
+        'data': {
+            'total': total,
+            'deep_collected': deep_collected,
+            'today': today_count,
+            'sources': sources
+        }
+    })
+
+
+@main_bp.route('/api/warehouse/update', methods=['POST'])
+@login_required
+def api_warehouse_update():
+    """
+    更新数据仓库中的记录
+    """
+    data = request.get_json() or {}
+    news_id = data.get('id')
+
+    if not news_id:
+        return jsonify({'code': 1, 'msg': '缺少数据ID'})
+
+    news = CollectedNews.query.get(news_id)
+    if not news:
+        return jsonify({'code': 1, 'msg': '数据不存在'})
+
+    try:
+        # 更新字段
+        if 'title' in data:
+            news.title = data['title'].strip()
+        if 'summary' in data:
+            news.summary = data['summary'].strip()
+        if 'source' in data:
+            news.source = data['source'].strip()
+        if 'keyword' in data:
+            news.keyword = data['keyword'].strip()
+        if 'cover' in data:
+            news.cover = data['cover'].strip()
+        if 'url' in data:
+            news.url = data['url'].strip()
+        if 'content' in data:
+            news.content = data['content'].strip()
+
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': '更新成功', 'data': news.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'更新失败: {str(e)}'})
+
+
+@main_bp.route('/api/warehouse/delete-batch', methods=['POST'])
+@login_required
+def api_warehouse_delete_batch():
+    """
+    批量删除数据
+    """
+    data = request.get_json() or {}
+    ids = data.get('ids', [])
+
+    if not ids:
+        return jsonify({'code': 1, 'msg': '请选择要删除的数据'})
+
+    try:
+        deleted = CollectedNews.query.filter(CollectedNews.id.in_(ids)).delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': f'成功删除 {deleted} 条数据'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'删除失败: {str(e)}'})
+
+
+@main_bp.route('/api/warehouse/ai-analyze', methods=['POST'])
+@login_required
+def api_warehouse_ai_analyze():
+    """
+    AI分析接口（预留）
+    """
+    data = request.get_json() or {}
+    news_ids = data.get('ids', [])
+
+    # TODO: 实现AI分析功能
+    return jsonify({
+        'code': 1,
+        'msg': 'AI分析功能即将上线，敬请期待...'
+    })
+

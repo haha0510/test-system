@@ -169,12 +169,43 @@ class BaiduNewsCrawler:
         for container in containers:
             try:
                 news = self._parse_news_item(container)
-                if news and news.get('title'):
+                # 数据清洗：过滤掉标题、URL或图片为空的脏数据
+                if self._is_valid_news(news):
                     news_list.append(news)
             except Exception as e:
                 continue
 
         return news_list
+
+    def _is_valid_news(self, news):
+        """
+        数据清洗：验证新闻数据是否有效
+
+        Args:
+            news: 新闻数据字典
+
+        Returns:
+            bool: 数据是否有效
+        """
+        if not news:
+            return False
+
+        # 标题不能为空
+        title = news.get('title', '').strip()
+        if not title:
+            return False
+
+        # URL不能为空
+        url = news.get('url', '').strip()
+        if not url:
+            return False
+
+        # 封面图片不能为空
+        cover = news.get('cover', '').strip()
+        if not cover:
+            return False
+
+        return True
 
     def _parse_news_item(self, container):
         """
@@ -268,3 +299,105 @@ def search_news(keyword, page=1, count=None):
     else:
         # 获取单页
         return crawler.search(keyword, page)
+
+
+def deep_collect(url):
+    """
+    深度采集：访问原始URL，提取文章正文、发布时间、作者等信息
+
+    Args:
+        url: 新闻原始URL
+
+    Returns:
+        dict: 包含 content, publish_time, author 的字典
+    """
+    result = {
+        'content': '',
+        'publish_time': '',
+        'author': ''
+    }
+
+    if not url:
+        return result
+
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+        }
+
+        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        response.encoding = response.apparent_encoding or 'utf-8'
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # 移除脚本和样式
+        for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside']):
+            tag.decompose()
+
+        # 尝试提取发布时间
+        time_patterns = [
+            r'\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?\s*\d{1,2}:\d{2}(:\d{2})?',
+            r'\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?',
+        ]
+        page_text = soup.get_text()
+        for pattern in time_patterns:
+            match = re.search(pattern, page_text)
+            if match:
+                result['publish_time'] = match.group().strip()
+                break
+
+        # 尝试提取作者
+        author_selectors = [
+            '[class*="author"]', '[class*="writer"]', '[class*="editor"]',
+            '[id*="author"]', '[class*="source"]', 'meta[name="author"]'
+        ]
+        for selector in author_selectors:
+            elem = soup.select_one(selector)
+            if elem:
+                if elem.name == 'meta':
+                    author = elem.get('content', '')
+                else:
+                    author = elem.get_text(strip=True)
+                if author and len(author) < 50:
+                    result['author'] = author
+                    break
+
+        # 提取正文内容
+        content_selectors = [
+            'article', '[class*="article"]', '[class*="content"]',
+            '[class*="post"]', '[class*="news"]', '[class*="detail"]',
+            '[id*="article"]', '[id*="content"]', 'main'
+        ]
+
+        content = ''
+        for selector in content_selectors:
+            elem = soup.select_one(selector)
+            if elem:
+                # 提取段落文本
+                paragraphs = elem.find_all(['p', 'div'])
+                texts = []
+                for p in paragraphs:
+                    text = p.get_text(strip=True)
+                    if text and len(text) > 20:  # 过滤掉太短的内容
+                        texts.append(text)
+                if texts:
+                    content = '\n\n'.join(texts)
+                    break
+
+        # 如果没找到，尝试从body提取
+        if not content:
+            body = soup.find('body')
+            if body:
+                paragraphs = body.find_all('p')
+                texts = [p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20]
+                content = '\n\n'.join(texts)
+
+        result['content'] = content[:10000]  # 限制长度
+
+    except Exception as e:
+        print(f"深度采集失败: {e}")
+
+    return result

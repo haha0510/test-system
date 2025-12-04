@@ -72,3 +72,51 @@ class SystemConfig(db.Model):
             config = SystemConfig(key=key, value=value)
             db.session.add(config)
         db.session.commit()
+
+
+class CollectedNews(db.Model):
+    """采集的新闻数据"""
+    __tablename__ = 'collected_news'
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(500), nullable=False)  # 新闻标题
+    summary = db.Column(db.Text)  # 新闻概要
+    cover = db.Column(db.String(1000))  # 封面图片URL
+    url = db.Column(db.String(1000), nullable=False)  # 原始URL
+    source = db.Column(db.String(100))  # 来源
+    keyword = db.Column(db.String(100))  # 采集关键词
+
+    # 深度采集数据
+    content = db.Column(db.Text)  # 正文内容
+    publish_time = db.Column(db.String(50))  # 发布时间
+    author = db.Column(db.String(100))  # 作者
+    deep_collected = db.Column(db.Boolean, default=False)  # 是否已深度采集
+
+    # 元数据
+    collected_by = db.Column(db.Integer, db.ForeignKey('users.id'))  # 采集人
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # 关联用户
+    collector = db.relationship('User', backref=db.backref('collected_news', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<CollectedNews {self.title[:20]}...>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'summary': self.summary,
+            'cover': self.cover,
+            'url': self.url,
+            'source': self.source,
+            'keyword': self.keyword,
+            'content': self.content,
+            'publish_time': self.publish_time,
+            'author': self.author,
+            'deep_collected': self.deep_collected,
+            'collected_by': self.collected_by,
+            'collector_name': self.collector.username if self.collector else '-',
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        }

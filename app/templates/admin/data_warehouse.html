@@ -1,0 +1,650 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}数据仓库管理{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 页面头部 */
+    .page-header {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 12px;
+        padding: 24px 32px;
+        margin-bottom: 20px;
+        color: #fff;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .page-header h2 {
+        font-size: 22px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .page-header h2 i {
+        color: #00f2ff;
+    }
+    .page-header p {
+        opacity: 0.7;
+        font-size: 13px;
+        margin-top: 4px;
+    }
+
+    /* 统计卡片 - 紧凑版 */
+    .stats-row {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    .stat-mini {
+        background: #fff;
+        border-radius: 10px;
+        padding: 16px 20px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        flex: 1;
+    }
+    .stat-mini .stat-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        color: #fff;
+    }
+    .stat-mini:nth-child(1) .stat-icon { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .stat-mini:nth-child(2) .stat-icon { background: linear-gradient(135deg, #11998e, #38ef7d); }
+    .stat-mini:nth-child(3) .stat-icon { background: linear-gradient(135deg, #00c6fb, #005bea); }
+    .stat-mini:nth-child(4) .stat-icon { background: linear-gradient(135deg, #f093fb, #f5576c); }
+    .stat-mini .stat-text h3 {
+        font-size: 22px;
+        font-weight: 700;
+        color: #333;
+    }
+    .stat-mini .stat-text p {
+        font-size: 12px;
+        color: #888;
+    }
+
+    /* 工具栏 */
+    .toolbar-card {
+        background: #fff;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .toolbar-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .toolbar-left {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .toolbar-left .layui-input {
+        height: 36px;
+        border-radius: 6px;
+        border: 1px solid #e0e0e0;
+    }
+    .toolbar-left .search-input {
+        width: 220px;
+    }
+    .toolbar-left .filter-select {
+        width: 130px;
+    }
+    .toolbar-right {
+        display: flex;
+        gap: 8px;
+    }
+    .toolbar-row .layui-btn {
+        height: 36px;
+        line-height: 36px;
+        padding: 0 16px;
+        border-radius: 6px;
+        font-size: 13px;
+    }
+    .btn-search { background: #667eea; border: none; }
+    .btn-search:hover { background: #5a6fd6; }
+    .btn-refresh { background: #f5f5f5; border: 1px solid #ddd; color: #666; }
+    .btn-refresh:hover { background: #eee; }
+    .btn-ai { background: linear-gradient(135deg, #00c6fb, #005bea); border: none; }
+    .btn-delete { background: #ff6b6b; border: none; }
+    .btn-delete:hover { background: #ee5a5a; }
+
+    /* 表格容器 */
+    .table-card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        overflow: hidden;
+    }
+    .table-toolbar {
+        padding: 14px 20px;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .table-toolbar h3 {
+        font-size: 15px;
+        font-weight: 600;
+        color: #333;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .table-toolbar h3 i { color: #667eea; }
+    .table-toolbar .count { color: #888; font-size: 13px; }
+
+    /* Layui表格样式覆盖 */
+    .layui-table-view {
+        border: none !important;
+    }
+    .layui-table-box {
+        overflow-x: auto;
+    }
+    .layui-table {
+        width: 100% !important;
+    }
+    .layui-table thead th {
+        background: #fafbfc !important;
+        font-weight: 600;
+        color: #333;
+        font-size: 13px;
+    }
+    .layui-table tbody td {
+        padding: 12px 10px;
+        font-size: 13px;
+    }
+    .layui-table tbody tr:hover {
+        background: #f8f9ff !important;
+    }
+    .layui-table-cell {
+        height: auto !important;
+        line-height: 1.6 !important;
+        padding: 8px 0 !important;
+    }
+
+    /* 新闻单元格 */
+    .news-cell {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .news-cell img {
+        width: 50px;
+        height: 38px;
+        border-radius: 4px;
+        object-fit: cover;
+        flex-shrink: 0;
+    }
+    .news-cell .info {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+    }
+    .news-cell .info h4 {
+        font-size: 13px;
+        font-weight: 500;
+        color: #333;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin-bottom: 2px;
+    }
+    .news-cell .info p {
+        font-size: 11px;
+        color: #999;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* 标签 */
+    .tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 500;
+    }
+    .tag-source { background: #e3f2fd; color: #1976d2; }
+    .tag-keyword { background: #e8f5e9; color: #388e3c; }
+    .tag-yes { background: #e8f5e9; color: #4caf50; }
+    .tag-no { background: #fff3e0; color: #f57c00; }
+
+    /* 操作按钮 */
+    .op-btns {
+        display: flex;
+        gap: 4px;
+    }
+    .op-btns .layui-btn {
+        padding: 0 8px;
+        height: 26px;
+        line-height: 26px;
+        font-size: 12px;
+        border-radius: 4px;
+    }
+
+    /* 分页 */
+    .layui-laypage {
+        margin: 16px 0;
+    }
+    .layui-laypage a, .layui-laypage span {
+        border-radius: 4px !important;
+    }
+    .layui-laypage .layui-laypage-curr .layui-laypage-em {
+        background: #667eea !important;
+    }
+
+    /* 弹窗 */
+    .detail-box {
+        padding: 20px;
+    }
+    .detail-box .cover {
+        width: 100%;
+        max-height: 200px;
+        object-fit: cover;
+        border-radius: 8px;
+        margin-bottom: 16px;
+    }
+    .detail-box h3 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 12px;
+        line-height: 1.5;
+    }
+    .detail-box .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid #eee;
+    }
+    .detail-box .meta span i {
+        margin-right: 4px;
+        color: #667eea;
+    }
+    .detail-box .content {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 16px;
+        max-height: 250px;
+        overflow-y: auto;
+        line-height: 1.8;
+        color: #555;
+        font-size: 13px;
+    }
+    .detail-box .ai-tip {
+        margin-top: 16px;
+        padding: 16px;
+        background: linear-gradient(135deg, rgba(0,198,251,0.08), rgba(0,91,234,0.08));
+        border-radius: 8px;
+        border: 1px dashed #00c6fb;
+        text-align: center;
+        color: #005bea;
+        font-size: 13px;
+    }
+
+    /* 编辑表单 */
+    .edit-box {
+        padding: 20px;
+    }
+    .edit-box .layui-form-item {
+        margin-bottom: 16px;
+    }
+    .edit-box .layui-form-label {
+        width: 70px;
+        font-size: 13px;
+    }
+    .edit-box .layui-input-block {
+        margin-left: 100px;
+    }
+    .edit-box .layui-input,
+    .edit-box .layui-textarea {
+        border-radius: 6px;
+        font-size: 13px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 页面头部 -->
+<div class="page-header">
+    <div>
+        <h2><i class="layui-icon layui-icon-template-1"></i>数据仓库管理</h2>
+        <p>管理已采集的舆情数据，支持查看、编辑、删除操作</p>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-row">
+    <div class="stat-mini">
+        <div class="stat-icon"><i class="layui-icon layui-icon-file"></i></div>
+        <div class="stat-text">
+            <h3 id="statTotal">0</h3>
+            <p>数据总量</p>
+        </div>
+    </div>
+    <div class="stat-mini">
+        <div class="stat-icon"><i class="layui-icon layui-icon-ok-circle"></i></div>
+        <div class="stat-text">
+            <h3 id="statDeep">0</h3>
+            <p>已深度采集</p>
+        </div>
+    </div>
+    <div class="stat-mini">
+        <div class="stat-icon"><i class="layui-icon layui-icon-date"></i></div>
+        <div class="stat-text">
+            <h3 id="statToday">0</h3>
+            <p>今日新增</p>
+        </div>
+    </div>
+    <div class="stat-mini">
+        <div class="stat-icon"><i class="layui-icon layui-icon-website"></i></div>
+        <div class="stat-text">
+            <h3 id="statSources">0</h3>
+            <p>数据来源</p>
+        </div>
+    </div>
+</div>
+
+<!-- 工具栏 -->
+<div class="toolbar-card">
+    <div class="toolbar-row">
+        <div class="toolbar-left">
+            <input type="text" id="searchKeyword" class="layui-input search-input" placeholder="搜索标题/关键词...">
+            <select id="filterSource" class="layui-input filter-select">
+                <option value="">全部来源</option>
+                <option value="百度新闻">百度新闻</option>
+                <option value="360新闻">360新闻</option>
+            </select>
+            <select id="filterDeep" class="layui-input filter-select">
+                <option value="">深度采集</option>
+                <option value="1">已采集</option>
+                <option value="0">未采集</option>
+            </select>
+            <button class="layui-btn btn-search" id="btnSearch">
+                <i class="layui-icon layui-icon-search"></i> 搜索
+            </button>
+            <button class="layui-btn btn-refresh" id="btnRefresh">
+                <i class="layui-icon layui-icon-refresh"></i>
+            </button>
+        </div>
+        <div class="toolbar-right">
+            <button class="layui-btn btn-ai" id="btnAi" disabled title="即将上线">
+                <i class="layui-icon layui-icon-auz"></i> AI分析
+            </button>
+            <button class="layui-btn btn-delete" id="btnDeleteBatch">
+                <i class="layui-icon layui-icon-delete"></i> 批量删除
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 数据表格 -->
+<div class="table-card">
+    <div class="table-toolbar">
+        <h3><i class="layui-icon layui-icon-list"></i>数据列表</h3>
+        <span class="count" id="tableCount">共 0 条</span>
+    </div>
+    <table class="layui-hide" id="dataTable" lay-filter="dataTable"></table>
+</div>
+
+<!-- 详情弹窗模板 -->
+<script type="text/html" id="detailTpl">
+{% raw %}
+<div class="detail-box">
+    <img class="cover" src="{{d.cover || ''}}" onerror="this.style.display='none'">
+    <h3>{{d.title}}</h3>
+    <div class="meta">
+        <span><i class="layui-icon layui-icon-website"></i>{{d.source || '未知'}}</span>
+        <span><i class="layui-icon layui-icon-search"></i>{{d.keyword || '无'}}</span>
+        <span><i class="layui-icon layui-icon-date"></i>{{d.created_at}}</span>
+        <span><i class="layui-icon layui-icon-username"></i>{{d.collector_name || '-'}}</span>
+    </div>
+    {{# if(d.content){ }}
+    <div class="content">{{d.content}}</div>
+    {{# } else { }}
+    <div class="content" style="text-align:center;color:#999;">暂无正文内容</div>
+    {{# } }}
+    <div class="ai-tip">
+        <i class="layui-icon layui-icon-auz"></i> AI智能分析功能即将上线
+    </div>
+</div>
+{% endraw %}
+</script>
+
+<!-- 编辑表单模板 -->
+<script type="text/html" id="editTpl">
+{% raw %}
+<div class="edit-box">
+    <form class="layui-form" lay-filter="editForm">
+        <input type="hidden" name="id" value="{{d.id}}">
+        <div class="layui-form-item">
+            <label class="layui-form-label">标题</label>
+            <div class="layui-input-block">
+                <input type="text" name="title" value="{{d.title}}" class="layui-input" required>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">摘要</label>
+            <div class="layui-input-block">
+                <textarea name="summary" class="layui-textarea" style="height:80px;">{{d.summary || ''}}</textarea>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">来源</label>
+            <div class="layui-input-block">
+                <input type="text" name="source" value="{{d.source || ''}}" class="layui-input">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">关键词</label>
+            <div class="layui-input-block">
+                <input type="text" name="keyword" value="{{d.keyword || ''}}" class="layui-input">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">封面</label>
+            <div class="layui-input-block">
+                <input type="text" name="cover" value="{{d.cover || ''}}" class="layui-input">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">URL</label>
+            <div class="layui-input-block">
+                <input type="text" name="url" value="{{d.url}}" class="layui-input" required>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">正文</label>
+            <div class="layui-input-block">
+                <textarea name="content" class="layui-textarea" style="height:120px;">{{d.content || ''}}</textarea>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <div class="layui-input-block">
+                <button type="submit" class="layui-btn" lay-submit lay-filter="saveEdit">保存</button>
+                <button type="button" class="layui-btn layui-btn-primary" onclick="layer.closeAll()">取消</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endraw %}
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+layui.use(['layer', 'table', 'form', 'laytpl'], function(){
+    var layer = layui.layer;
+    var table = layui.table;
+    var form = layui.form;
+    var laytpl = layui.laytpl;
+
+    // 初始化表格
+    var tableIns = table.render({
+        elem: '#dataTable',
+        url: '/api/warehouse/list',
+        method: 'get',
+        page: true,
+        limit: 10,
+        limits: [10, 20, 50],
+        loading: true,
+        skin: 'line',
+        even: true,
+        size: 'lg',
+        cols: [[
+            {type: 'checkbox', width: 50},
+            {field: 'id', title: 'ID', width: 60, sort: true, align: 'center'},
+            {field: 'title', title: '新闻信息', minWidth: 280, templet: function(d){
+                var cover = d.cover || '';
+                var imgHtml = cover ? '<img src="' + cover + '" onerror="this.style.display=\'none\'">' : '';
+                return '<div class="news-cell">' + imgHtml +
+                    '<div class="info"><h4 title="' + d.title + '">' + d.title + '</h4>' +
+                    '<p>' + (d.summary || '').substring(0, 40) + '</p></div></div>';
+            }},
+            {field: 'source', title: '来源', width: 100, align: 'center', templet: function(d){
+                return '<span class="tag tag-source">' + (d.source || '-') + '</span>';
+            }},
+            {field: 'keyword', title: '关键词', width: 80, align: 'center', templet: function(d){
+                return d.keyword ? '<span class="tag tag-keyword">' + d.keyword + '</span>' : '-';
+            }},
+            {field: 'deep_collected', title: '深度', width: 70, align: 'center', templet: function(d){
+                return d.deep_collected ? '<span class="tag tag-yes">是</span>' : '<span class="tag tag-no">否</span>';
+            }},
+            {field: 'created_at', title: '采集时间', width: 150, align: 'center'},
+            {title: '操作', width: 150, align: 'center', templet: function(d){
+                return '<div class="op-btns">' +
+                    '<button class="layui-btn layui-btn-xs layui-btn-normal" lay-event="view" title="查看"><i class="layui-icon layui-icon-about"></i></button>' +
+                    '<button class="layui-btn layui-btn-xs" lay-event="edit" title="编辑"><i class="layui-icon layui-icon-edit"></i></button>' +
+                    '<button class="layui-btn layui-btn-xs layui-btn-primary" lay-event="link" title="原文"><i class="layui-icon layui-icon-link"></i></button>' +
+                    '<button class="layui-btn layui-btn-xs layui-btn-danger" lay-event="del" title="删除"><i class="layui-icon layui-icon-delete"></i></button>' +
+                '</div>';
+            }}
+        ]],
+        parseData: function(res){
+            return { code: res.code === 0 ? 0 : 1, msg: res.msg, count: res.count, data: res.data };
+        },
+        done: function(res){
+            document.getElementById('tableCount').textContent = '共 ' + res.count + ' 条';
+        }
+    });
+
+    // 加载统计
+    function loadStats() {
+        fetch('/api/warehouse/stats').then(r => r.json()).then(data => {
+            if(data.code === 0) {
+                document.getElementById('statTotal').textContent = data.data.total || 0;
+                document.getElementById('statDeep').textContent = data.data.deep_collected || 0;
+                document.getElementById('statToday').textContent = data.data.today || 0;
+                document.getElementById('statSources').textContent = data.data.sources || 0;
+            }
+        });
+    }
+    loadStats();
+
+    // 搜索
+    document.getElementById('btnSearch').onclick = function(){
+        tableIns.reload({
+            where: {
+                keyword: document.getElementById('searchKeyword').value,
+                source: document.getElementById('filterSource').value,
+                deep_collected: document.getElementById('filterDeep').value
+            },
+            page: { curr: 1 }
+        });
+    };
+
+    // 刷新
+    document.getElementById('btnRefresh').onclick = function(){
+        document.getElementById('searchKeyword').value = '';
+        document.getElementById('filterSource').value = '';
+        document.getElementById('filterDeep').value = '';
+        tableIns.reload({ where: {}, page: { curr: 1 } });
+        loadStats();
+    };
+
+    // 回车搜索
+    document.getElementById('searchKeyword').onkeypress = function(e){
+        if(e.keyCode === 13) document.getElementById('btnSearch').click();
+    };
+
+    // 表格事件
+    table.on('tool(dataTable)', function(obj){
+        var d = obj.data;
+        if(obj.event === 'view'){
+            laytpl(document.getElementById('detailTpl').innerHTML).render(d, function(html){
+                layer.open({ type: 1, title: '数据详情', area: ['600px', '500px'], content: html, shadeClose: true });
+            });
+        } else if(obj.event === 'edit'){
+            laytpl(document.getElementById('editTpl').innerHTML).render(d, function(html){
+                layer.open({ type: 1, title: '编辑数据', area: ['550px', '550px'], content: html, success: function(){ form.render(); } });
+            });
+        } else if(obj.event === 'link'){
+            window.open(d.url, '_blank');
+        } else if(obj.event === 'del'){
+            layer.confirm('确定删除这条数据？', { icon: 3 }, function(idx){
+                fetch('/api/collect/' + d.id, { method: 'DELETE' }).then(r => r.json()).then(res => {
+                    if(res.code === 0){ layer.msg('已删除', {icon: 1}); tableIns.reload(); loadStats(); }
+                    else { layer.msg(res.msg, {icon: 2}); }
+                });
+                layer.close(idx);
+            });
+        }
+    });
+
+    // 保存编辑
+    form.on('submit(saveEdit)', function(data){
+        fetch('/api/warehouse/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data.field)
+        }).then(r => r.json()).then(res => {
+            if(res.code === 0){ layer.msg('保存成功', {icon: 1}); layer.closeAll(); tableIns.reload(); }
+            else { layer.msg(res.msg, {icon: 2}); }
+        });
+        return false;
+    });
+
+    // 批量删除
+    document.getElementById('btnDeleteBatch').onclick = function(){
+        var checked = table.checkStatus('dataTable').data;
+        if(checked.length === 0){ layer.msg('请选择数据', {icon: 0}); return; }
+        layer.confirm('确定删除选中的 ' + checked.length + ' 条数据？', { icon: 3 }, function(idx){
+            var ids = checked.map(function(item){ return item.id; });
+            fetch('/api/warehouse/delete-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids })
+            }).then(r => r.json()).then(res => {
+                if(res.code === 0){ layer.msg('删除成功', {icon: 1}); tableIns.reload(); loadStats(); }
+                else { layer.msg(res.msg, {icon: 2}); }
+            });
+            layer.close(idx);
+        });
+    };
+
+    // AI按钮
+    document.getElementById('btnAi').onclick = function(){
+        layer.msg('AI分析功能即将上线', {icon: 0});
+    };
+});
+</script>
+{% endblock %}

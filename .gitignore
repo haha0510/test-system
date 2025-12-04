@@ -19,3 +19,9 @@ instance/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test files
+*_test.html
+*_test.json
+*_api.json
+nul
