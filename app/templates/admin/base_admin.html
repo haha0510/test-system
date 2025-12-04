@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}后台管理{% endblock %} - 政企智能舆情分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='layui-v2.13.2/layui/css/layui.css') }}">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #f2f2f2;
+        }
+        /* 顶部导航 */
+        .admin-header {
+            height: 60px;
+            background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .admin-header .logo {
+            display: flex;
+            align-items: center;
+            color: #fff;
+            font-size: 18px;
+            font-weight: 500;
+        }
+        .admin-header .logo i {
+            font-size: 28px;
+            margin-right: 10px;
+            color: #00f2ff;
+        }
+        .admin-header .user-info {
+            display: flex;
+            align-items: center;
+            color: #fff;
+        }
+        .admin-header .user-info span {
+            margin-right: 15px;
+        }
+        .admin-header .user-info .layui-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        /* 侧边栏 */
+        .admin-side {
+            position: fixed;
+            left: 0;
+            top: 60px;
+            bottom: 0;
+            width: 200px;
+            background: #2f3447;
+            overflow-y: auto;
+        }
+        .admin-side .layui-nav {
+            background: transparent;
+        }
+        .admin-side .layui-nav .layui-nav-item a {
+            color: #ccc;
+            padding: 0 30px;
+            height: 48px;
+            line-height: 48px;
+        }
+        .admin-side .layui-nav .layui-nav-item a:hover,
+        .admin-side .layui-nav .layui-this a {
+            background: rgba(0,242,255,0.1);
+            color: #00f2ff;
+        }
+        .admin-side .layui-nav .layui-nav-item a i {
+            margin-right: 10px;
+        }
+        .admin-side .layui-nav-bar {
+            background: #00f2ff;
+        }
+        /* 主体内容 */
+        .admin-body {
+            margin-left: 200px;
+            padding: 20px;
+            min-height: calc(100vh - 60px);
+            margin-top: 60px;
+        }
+        .admin-body .layui-card {
+            border-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+        .admin-body .layui-card-header {
+            font-weight: 500;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        /* 数据卡片 */
+        .data-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            padding: 20px;
+            color: #fff;
+            margin-bottom: 20px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .data-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        .data-card.blue { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); }
+        .data-card.cyan { background: linear-gradient(135deg, #00c6fb 0%, #005bea 100%); }
+        .data-card.green { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .data-card.orange { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .data-card h3 {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+        .data-card .num {
+            font-size: 32px;
+            font-weight: 600;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <div class="admin-header">
+        <div class="logo">
+            <i class="layui-icon layui-icon-app"></i>
+            <span>政企智能舆情分析系统</span>
+        </div>
+        <div class="user-info">
+            <span><i class="layui-icon layui-icon-username"></i> {{ session.username }}</span>
+            <button class="layui-btn layui-btn-sm" id="logoutBtn">
+                <i class="layui-icon layui-icon-logout"></i> 退出
+            </button>
+        </div>
+    </div>
+
+    <!-- 侧边导航 -->
+    <div class="admin-side">
+        <ul class="layui-nav layui-nav-tree">
+            <li class="layui-nav-item {% if request.endpoint == 'main.dashboard' %}layui-this{% endif %}">
+                <a href="{{ url_for('main.dashboard') }}"><i class="layui-icon layui-icon-home"></i>仪表盘</a>
+            </li>
+            <li class="layui-nav-item {% if request.endpoint == 'main.news_crawler' %}layui-this{% endif %}">
+                <a href="{{ url_for('main.news_crawler') }}"><i class="layui-icon layui-icon-release"></i>舆情采集</a>
+            </li>
+            {% if session.role == 'admin' %}
+            <li class="layui-nav-item {% if request.endpoint == 'main.user_manage' %}layui-this{% endif %}">
+                <a href="{{ url_for('main.user_manage') }}"><i class="layui-icon layui-icon-user"></i>用户管理</a>
+            </li>
+            <li class="layui-nav-item {% if request.endpoint == 'main.system_settings' %}layui-this{% endif %}">
+                <a href="{{ url_for('main.system_settings') }}"><i class="layui-icon layui-icon-set"></i>系统设置</a>
+            </li>
+            {% endif %}
+        </ul>
+    </div>
+
+    <!-- 主体内容 -->
+    <div class="admin-body">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="{{ url_for('static', filename='layui-v2.13.2/layui/layui.js') }}"></script>
+    <script>
+        layui.use(['element', 'layer'], function(){
+            var layer = layui.layer;
+
+            // 退出登录
+            document.getElementById('logoutBtn').onclick = function(){
+                layer.confirm('确定要退出登录吗？', {icon: 3, title: '提示'}, function(index){
+                    fetch('/api/auth/logout', { method: 'POST' })
+                        .then(res => res.json())
+                        .then(data => {
+                            if(data.code === 0) {
+                                window.location.href = '/login';
+                            }
+                        });
+                    layer.close(index);
+                });
+            };
+        });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

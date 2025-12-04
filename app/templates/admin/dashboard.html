@@ -1,0 +1,79 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}仪表盘{% endblock %}
+
+{% block content %}
+<!-- 数据概览卡片 -->
+<div class="layui-row layui-col-space15">
+    <div class="layui-col-md3">
+        <div class="data-card blue">
+            <h3><i class="layui-icon layui-icon-chart"></i> 今日舆情总量</h3>
+            <div class="num" id="todayTotal">--</div>
+        </div>
+    </div>
+    <div class="layui-col-md3">
+        <div class="data-card cyan">
+            <h3><i class="layui-icon layui-icon-face-smile"></i> 正面舆情</h3>
+            <div class="num" id="positiveCount">--</div>
+        </div>
+    </div>
+    <div class="layui-col-md3">
+        <div class="data-card orange">
+            <h3><i class="layui-icon layui-icon-face-cry"></i> 负面舆情</h3>
+            <div class="num" id="negativeCount">--</div>
+        </div>
+    </div>
+    <div class="layui-col-md3">
+        <div class="data-card green">
+            <h3><i class="layui-icon layui-icon-read"></i> 分析报告</h3>
+            <div class="num" id="reportCount">--</div>
+        </div>
+    </div>
+</div>
+
+<!-- 欢迎信息 -->
+<div class="layui-card">
+    <div class="layui-card-header">
+        <i class="layui-icon layui-icon-home"></i> 欢迎使用
+    </div>
+    <div class="layui-card-body" style="padding: 30px;">
+        <div style="text-align: center;">
+            <i class="layui-icon layui-icon-app" style="font-size: 60px; color: #1e3c72;"></i>
+            <h2 style="margin: 20px 0; color: #333;">政企智能舆情分析系统</h2>
+            <p style="color: #666; margin-bottom: 20px;">感知社情民意 · 驱动科学决策</p>
+            <p style="color: #999;">
+                欢迎您，<strong>{{ session.username }}</strong>！
+                您的角色是：<strong>{% if session.role == 'admin' %}管理员{% else %}普通用户{% endif %}</strong>
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- 最新报告列表 -->
+<div class="layui-card" style="margin-top: 20px;">
+    <div class="layui-card-header">
+        <i class="layui-icon layui-icon-file-b"></i> 最新分析报告
+    </div>
+    <div class="layui-card-body">
+        <div style="text-align: center; padding: 40px; color: #999;">
+            <i class="layui-icon layui-icon-file" style="font-size: 48px;"></i>
+            <p style="margin-top: 15px;">暂无分析报告</p>
+            <p>系统正在建设中，敬请期待...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+layui.use(['layer'], function(){
+    // 模拟加载数据
+    setTimeout(function(){
+        document.getElementById('todayTotal').textContent = '0';
+        document.getElementById('positiveCount').textContent = '0';
+        document.getElementById('negativeCount').textContent = '0';
+        document.getElementById('reportCount').textContent = '0';
+    }, 500);
+});
+</script>
+{% endblock %}

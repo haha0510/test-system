@@ -1,0 +1,209 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}用户管理{% endblock %}
+
+{% block content %}
+<div class="layui-card">
+    <div class="layui-card-header">
+        <i class="layui-icon layui-icon-user"></i> 用户管理
+    </div>
+    <div class="layui-card-body">
+        <!-- 工具栏 -->
+        <div class="layui-form" style="margin-bottom: 15px;">
+            <div class="layui-inline">
+                <input type="text" id="searchUsername" placeholder="搜索用户名" class="layui-input" style="width: 200px;">
+            </div>
+            <div class="layui-inline">
+                <button class="layui-btn" id="searchBtn"><i class="layui-icon layui-icon-search"></i> 搜索</button>
+                <button class="layui-btn layui-btn-normal" id="addUserBtn"><i class="layui-icon layui-icon-add-1"></i> 新增用户</button>
+            </div>
+        </div>
+
+        <!-- 用户表格 -->
+        <table id="userTable" lay-filter="userTable"></table>
+    </div>
+</div>
+
+<!-- 表格操作列模板 -->
+<script type="text/html" id="userTableBar">
+    <a class="layui-btn layui-btn-xs" lay-event="edit"><i class="layui-icon layui-icon-edit"></i>编辑</a>
+    <a class="layui-btn layui-btn-xs layui-btn-danger" lay-event="del"><i class="layui-icon layui-icon-delete"></i>删除</a>
+</script>
+
+<!-- 状态列模板 -->
+<script type="text/html" id="statusTpl">
+{% raw %}
+    {{# if(d.status === 1){ }}
+        <span style="color: #009688;">启用</span>
+    {{# } else { }}
+        <span style="color: #FF5722;">禁用</span>
+    {{# } }}
+{% endraw %}
+</script>
+
+<!-- 新增/编辑用户表单 -->
+<script type="text/html" id="userFormTpl">
+{% raw %}
+    <form class="layui-form" style="padding: 20px;" lay-filter="userForm">
+        <input type="hidden" name="id" value="{{d.id || ''}}">
+        <div class="layui-form-item">
+            <label class="layui-form-label">用户名</label>
+            <div class="layui-input-block">
+                <input type="text" name="username" value="{{d.username || ''}}" placeholder="请输入用户名"
+                    class="layui-input" lay-verify="required" {{d.id ? 'disabled' : ''}}>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">密码</label>
+            <div class="layui-input-block">
+                <input type="password" name="password" placeholder="{{d.id ? '留空则不修改' : '请输入密码'}}"
+                    class="layui-input" {{d.id ? '' : 'lay-verify="required"'}}>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">角色</label>
+            <div class="layui-input-block">
+                <select name="role" lay-verify="required">
+                    <option value="user" {{d.role === 'user' ? 'selected' : ''}}>普通用户</option>
+                    <option value="admin" {{d.role === 'admin' ? 'selected' : ''}}>管理员</option>
+                </select>
+            </div>
+        </div>
+        {{# if(d.id){ }}
+        <div class="layui-form-item">
+            <label class="layui-form-label">状态</label>
+            <div class="layui-input-block">
+                <select name="status">
+                    <option value="1" {{d.status === 1 ? 'selected' : ''}}>启用</option>
+                    <option value="0" {{d.status === 0 ? 'selected' : ''}}>禁用</option>
+                </select>
+            </div>
+        </div>
+        {{# } }}
+        <div class="layui-form-item" style="text-align: center; margin-top: 20px;">
+            <button type="submit" class="layui-btn" lay-submit lay-filter="submitUser">确定</button>
+            <button type="button" class="layui-btn layui-btn-primary" id="cancelBtn">取消</button>
+        </div>
+    </form>
+{% endraw %}
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+layui.use(['table', 'form', 'layer', 'laytpl'], function(){
+    var table = layui.table;
+    var form = layui.form;
+    var layer = layui.layer;
+    var laytpl = layui.laytpl;
+    var $ = layui.$;
+
+    // 渲染用户表格
+    table.render({
+        elem: '#userTable',
+        url: '/api/users',
+        page: true,
+        cols: [[
+            {field: 'id', title: 'ID', width: 80, sort: true},
+            {field: 'username', title: '用户名', width: 150},
+            {field: 'role_name', title: '角色', width: 100},
+            {field: 'status', title: '状态', width: 80, templet: '#statusTpl'},
+            {field: 'last_login', title: '最后登录', width: 170},
+            {field: 'created_at', title: '创建时间', width: 170},
+            {fixed: 'right', title: '操作', toolbar: '#userTableBar', width: 150}
+        ]],
+        response: {
+            statusCode: 0
+        },
+        parseData: function(res){
+            return {
+                "code": res.code,
+                "msg": res.msg,
+                "count": res.count,
+                "data": res.data
+            };
+        }
+    });
+
+    // 搜索
+    $('#searchBtn').click(function(){
+        table.reload('userTable', {
+            where: { username: $('#searchUsername').val() },
+            page: { curr: 1 }
+        });
+    });
+
+    // 新增用户
+    $('#addUserBtn').click(function(){
+        openUserForm({});
+    });
+
+    // 表格操作
+    table.on('tool(userTable)', function(obj){
+        var data = obj.data;
+        if(obj.event === 'edit'){
+            openUserForm(data);
+        } else if(obj.event === 'del'){
+            layer.confirm('确定要删除用户【' + data.username + '】吗？', {icon: 3, title: '确认删除'}, function(index){
+                fetch('/api/users/' + data.id, { method: 'DELETE' })
+                    .then(res => res.json())
+                    .then(res => {
+                        if(res.code === 0){
+                            layer.msg('删除成功');
+                            table.reload('userTable');
+                        } else {
+                            layer.msg(res.msg, {icon: 2});
+                        }
+                    });
+                layer.close(index);
+            });
+        }
+    });
+
+    // 打开用户表单
+    function openUserForm(data){
+        var html = laytpl($('#userFormTpl').html()).render(data);
+        var title = data.id ? '编辑用户' : '新增用户';
+
+        layer.open({
+            type: 1,
+            title: title,
+            area: ['450px', 'auto'],
+            content: html,
+            success: function(layero, index){
+                form.render();
+
+                // 取消按钮
+                $(layero).find('#cancelBtn').click(function(){
+                    layer.close(index);
+                });
+
+                // 提交表单
+                form.on('submit(submitUser)', function(formData){
+                    var url = data.id ? '/api/users/' + data.id : '/api/users';
+                    var method = data.id ? 'PUT' : 'POST';
+
+                    fetch(url, {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData.field)
+                    })
+                    .then(res => res.json())
+                    .then(res => {
+                        if(res.code === 0){
+                            layer.msg(data.id ? '更新成功' : '添加成功');
+                            layer.close(index);
+                            table.reload('userTable');
+                        } else {
+                            layer.msg(res.msg, {icon: 2});
+                        }
+                    });
+
+                    return false;
+                });
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

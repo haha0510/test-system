@@ -1,0 +1,130 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}系统设置{% endblock %}
+
+{% block content %}
+<div class="layui-card">
+    <div class="layui-card-header">
+        <i class="layui-icon layui-icon-set"></i> 系统设置
+    </div>
+    <div class="layui-card-body">
+        <form class="layui-form" style="max-width: 600px; padding: 20px;">
+            <div class="layui-form-item">
+                <label class="layui-form-label">应用名称</label>
+                <div class="layui-input-block">
+                    <input type="text" name="app_name" id="appName" placeholder="请输入应用名称"
+                        class="layui-input" lay-verify="required">
+                </div>
+            </div>
+            <div class="layui-form-item">
+                <label class="layui-form-label">系统LOGO</label>
+                <div class="layui-input-block">
+                    <input type="text" name="logo_url" id="logoUrl" placeholder="请输入LOGO图片URL"
+                        class="layui-input">
+                    <div class="layui-form-mid layui-word-aux">输入图片URL地址，留空使用默认LOGO</div>
+                </div>
+            </div>
+            <div class="layui-form-item">
+                <div class="layui-input-block">
+                    <button type="button" class="layui-btn" id="saveBtn">
+                        <i class="layui-icon layui-icon-ok"></i> 保存设置
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 角色管理（只读展示） -->
+<div class="layui-card" style="margin-top: 20px;">
+    <div class="layui-card-header">
+        <i class="layui-icon layui-icon-group"></i> 角色管理
+    </div>
+    <div class="layui-card-body">
+        <div class="layui-row layui-col-space15">
+            <div class="layui-col-md6">
+                <div class="layui-card" style="border: 1px solid #e2e2e2;">
+                    <div class="layui-card-header" style="background: #f8f8f8;">
+                        <i class="layui-icon layui-icon-auz" style="color: #ff9800;"></i> 管理员 (admin)
+                    </div>
+                    <div class="layui-card-body">
+                        <p style="color: #666; line-height: 1.8;">
+                            拥有系统的所有操作权限，包括：
+                        </p>
+                        <ul style="color: #999; padding-left: 20px; line-height: 2;">
+                            <li>查看数据报表和仪表盘</li>
+                            <li>浏览和管理舆情分析报告</li>
+                            <li>用户账户的增删改查</li>
+                            <li>系统配置管理</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="layui-col-md6">
+                <div class="layui-card" style="border: 1px solid #e2e2e2;">
+                    <div class="layui-card-header" style="background: #f8f8f8;">
+                        <i class="layui-icon layui-icon-user" style="color: #009688;"></i> 普通用户 (user)
+                    </div>
+                    <div class="layui-card-body">
+                        <p style="color: #666; line-height: 1.8;">
+                            系统的主要使用者，权限包括：
+                        </p>
+                        <ul style="color: #999; padding-left: 20px; line-height: 2;">
+                            <li>查看数据报表和仪表盘</li>
+                            <li>浏览已生成的舆情分析报告</li>
+                            <li>创建新的分析任务</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+layui.use(['form', 'layer'], function(){
+    var form = layui.form;
+    var layer = layui.layer;
+
+    // 加载当前设置
+    fetch('/api/settings')
+        .then(res => res.json())
+        .then(res => {
+            if(res.code === 0){
+                document.getElementById('appName').value = res.data.app_name || '';
+                document.getElementById('logoUrl').value = res.data.logo_url || '';
+            }
+        });
+
+    // 保存设置
+    document.getElementById('saveBtn').onclick = function(){
+        var appName = document.getElementById('appName').value.trim();
+        var logoUrl = document.getElementById('logoUrl').value.trim();
+
+        if(!appName){
+            layer.msg('请输入应用名称', {icon: 2});
+            return;
+        }
+
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                app_name: appName,
+                logo_url: logoUrl
+            })
+        })
+        .then(res => res.json())
+        .then(res => {
+            if(res.code === 0){
+                layer.msg('保存成功', {icon: 1});
+            } else {
+                layer.msg(res.msg, {icon: 2});
+            }
+        });
+    };
+});
+</script>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - 业务管理系统{% endblock %}
+
+{% block content %}
+<div class="layui-container" style="padding-top: 50px;">
+    <div class="layui-row">
+        <div class="layui-col-md6 layui-col-md-offset3">
+            <div class="layui-card">
+                <div class="layui-card-header">
+                    <h2>业务管理系统</h2>
+                </div>
+                <div class="layui-card-body">
+                    <p>系统框架已成功搭建！</p>
+                    <p>技术栈：Flask + Layui + SQLite</p>
+                    <hr>
+                    <button type="button" class="layui-btn" id="testBtn">测试按钮</button>
+                    <button type="button" class="layui-btn layui-btn-normal" id="healthBtn">健康检查</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+layui.use(['layer'], function(){
+    var layer = layui.layer;
+
+    document.getElementById('testBtn').onclick = function(){
+        layer.msg('Layui 组件加载成功！');
+    };
+
+    document.getElementById('healthBtn').onclick = function(){
+        fetch('/api/health')
+            .then(response => response.json())
+            .then(data => {
+                layer.msg(data.message);
+            })
+            .catch(err => {
+                layer.msg('请求失败', {icon: 2});
+            });
+    };
+});
+</script>
+{% endblock %}
