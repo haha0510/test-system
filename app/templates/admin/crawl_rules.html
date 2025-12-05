@@ -1,0 +1,1205 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}采集规则库{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 页面头部 */
+    .page-header {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 12px;
+        padding: 24px 32px;
+        margin-bottom: 20px;
+        color: #fff;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .page-header h2 {
+        font-size: 22px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .page-header h2 i {
+        color: #00f2ff;
+    }
+    .page-header p {
+        opacity: 0.7;
+        font-size: 13px;
+        margin-top: 4px;
+    }
+
+    /* 统计卡片 */
+    .stats-row {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    .stat-mini {
+        background: #fff;
+        border-radius: 10px;
+        padding: 16px 20px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        flex: 1;
+    }
+    .stat-mini .stat-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        color: #fff;
+    }
+    .stat-mini:nth-child(1) .stat-icon { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .stat-mini:nth-child(2) .stat-icon { background: linear-gradient(135deg, #11998e, #38ef7d); }
+    .stat-mini:nth-child(3) .stat-icon { background: linear-gradient(135deg, #f093fb, #f5576c); }
+    .stat-mini .stat-text h3 {
+        font-size: 22px;
+        font-weight: 700;
+        color: #333;
+    }
+    .stat-mini .stat-text p {
+        font-size: 12px;
+        color: #888;
+    }
+
+    /* 工具栏 */
+    .toolbar-card {
+        background: #fff;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .toolbar-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .toolbar-left {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .toolbar-left .layui-input {
+        height: 36px;
+        border-radius: 6px;
+        border: 1px solid #e0e0e0;
+    }
+    .toolbar-left .search-input {
+        width: 200px;
+    }
+    .toolbar-left select {
+        height: 36px;
+        border-radius: 6px;
+        padding: 0 12px;
+        border: 1px solid #e0e0e0;
+        background: #fff;
+        min-width: 100px;
+    }
+    .toolbar-right {
+        display: flex;
+        gap: 10px;
+    }
+    .toolbar-btn {
+        height: 36px;
+        line-height: 36px;
+        padding: 0 16px;
+        border-radius: 6px;
+        font-size: 13px;
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; }
+    .btn-success { background: linear-gradient(135deg, #11998e, #38ef7d); color: #fff; }
+    .btn-danger { background: linear-gradient(135deg, #f093fb, #f5576c); color: #fff; }
+    .btn-default { background: #f5f5f5; color: #666; border: 1px solid #e0e0e0; }
+    .toolbar-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+    /* 表格卡片 */
+    .table-card {
+        background: #fff;
+        border-radius: 12px;
+        padding: 16px 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    /* 表格样式 */
+    .layui-table-cell {
+        height: auto;
+        line-height: 1.6;
+        padding: 10px 15px;
+    }
+    .layui-table th {
+        background: #f8f9fa;
+        font-weight: 600;
+    }
+    .layui-table tr:hover {
+        background: #f5f7fa;
+    }
+
+    /* 站点信息 */
+    .site-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .site-name {
+        font-weight: 600;
+        color: #333;
+        font-size: 14px;
+    }
+    .site-domain {
+        color: #888;
+        font-size: 12px;
+    }
+
+    /* xpath信息 */
+    .xpath-info {
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 12px;
+        color: #666;
+        background: #f5f5f5;
+        padding: 4px 8px;
+        border-radius: 4px;
+        max-width: 250px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .xpath-empty {
+        color: #ccc;
+        font-style: italic;
+    }
+
+    /* 适用来源标签 */
+    .source-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    .source-tag {
+        display: inline-block;
+        padding: 2px 8px;
+        background: #e3f2fd;
+        color: #1976d2;
+        border-radius: 10px;
+        font-size: 11px;
+    }
+    .source-tag.empty {
+        background: #f5f5f5;
+        color: #999;
+    }
+
+    /* 优先级标签 */
+    .priority-tag {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 500;
+    }
+    .priority-high { background: #ffebee; color: #e53935; }
+    .priority-medium { background: #fff3e0; color: #fb8c00; }
+    .priority-normal { background: #e8f5e9; color: #43a047; }
+
+    /* 成功率 */
+    .success-rate {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+    }
+    .success-rate .rate-value {
+        font-weight: 600;
+        font-size: 14px;
+    }
+    .success-rate .rate-value.good { color: #43a047; }
+    .success-rate .rate-value.medium { color: #fb8c00; }
+    .success-rate .rate-value.bad { color: #e53935; }
+    .success-rate .rate-detail {
+        font-size: 11px;
+        color: #999;
+    }
+
+    /* 状态标签 */
+    .status-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+    }
+    .status-tag.enabled {
+        background: rgba(17, 153, 142, 0.1);
+        color: #11998e;
+    }
+    .status-tag.disabled {
+        background: rgba(255, 107, 107, 0.1);
+        color: #ff6b6b;
+    }
+
+    /* 操作按钮 */
+    .opt-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        margin: 0 2px;
+        transition: all 0.2s;
+    }
+    .opt-btn.view { background: rgba(0, 123, 255, 0.1); color: #007bff; }
+    .opt-btn.edit { background: rgba(40, 167, 69, 0.1); color: #28a745; }
+    .opt-btn.test { background: rgba(255, 193, 7, 0.1); color: #ffc107; }
+    .opt-btn.copy { background: rgba(23, 162, 184, 0.1); color: #17a2b8; }
+    .opt-btn.delete { background: rgba(220, 53, 69, 0.1); color: #dc3545; }
+    .opt-btn.data { background: rgba(102, 126, 234, 0.1); color: #667eea; }
+    .opt-btn:hover { transform: scale(1.1); }
+
+    /* 使用次数样式 */
+    .usage-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+    }
+    .usage-count {
+        font-weight: 600;
+        font-size: 14px;
+        color: #333;
+    }
+    .usage-count.active {
+        color: #667eea;
+        cursor: pointer;
+    }
+    .usage-count.active:hover {
+        text-decoration: underline;
+    }
+    .usage-label {
+        font-size: 10px;
+        color: #888;
+    }
+
+    /* 表单样式 */
+    .form-group {
+        margin-bottom: 20px;
+    }
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #333;
+    }
+    .form-group label .required {
+        color: #f5576c;
+        margin-left: 2px;
+    }
+    .form-group .layui-input,
+    .form-group .layui-textarea {
+        border-radius: 6px;
+        border: 1px solid #e0e0e0;
+    }
+    .form-group .layui-input:focus,
+    .form-group .layui-textarea:focus {
+        border-color: #667eea;
+    }
+    .form-group .help-text {
+        font-size: 12px;
+        color: #888;
+        margin-top: 6px;
+    }
+    .form-row {
+        display: flex;
+        gap: 16px;
+    }
+    .form-row .form-group {
+        flex: 1;
+    }
+
+    /* 来源标签输入 */
+    .source-input-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        min-height: 40px;
+        background: #fff;
+    }
+    .source-input-wrap .tag-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        background: #e3f2fd;
+        color: #1976d2;
+        border-radius: 12px;
+        font-size: 12px;
+    }
+    .source-input-wrap .tag-item .remove-tag {
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 1;
+        opacity: 0.7;
+    }
+    .source-input-wrap .tag-item .remove-tag:hover {
+        opacity: 1;
+    }
+    .source-input-wrap .tag-input {
+        border: none;
+        outline: none;
+        flex: 1;
+        min-width: 80px;
+        font-size: 13px;
+    }
+
+    /* 预设来源按钮 */
+    .preset-sources {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+    .preset-sources .preset-btn {
+        padding: 3px 10px;
+        background: #f5f5f5;
+        border: 1px dashed #ddd;
+        border-radius: 12px;
+        font-size: 11px;
+        color: #666;
+        cursor: pointer;
+    }
+    .preset-sources .preset-btn:hover {
+        background: #e3f2fd;
+        border-color: #1976d2;
+        color: #1976d2;
+    }
+
+    /* 测试采集弹窗 */
+    .test-result {
+        padding: 20px;
+    }
+    .test-result .test-url {
+        margin-bottom: 16px;
+    }
+    .test-result .test-url input {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        font-size: 13px;
+    }
+    .test-result .result-content {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 16px;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    .test-result .result-item {
+        margin-bottom: 12px;
+    }
+    .test-result .result-item label {
+        display: block;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 4px;
+        font-size: 13px;
+    }
+    .test-result .result-item .value {
+        color: #666;
+        font-size: 13px;
+        line-height: 1.6;
+        word-break: break-all;
+    }
+    .test-result .result-item .value.success {
+        color: #43a047;
+    }
+    .test-result .result-item .value.error {
+        color: #e53935;
+    }
+
+    /* 弹窗样式 */
+    .layui-layer-content {
+        padding: 20px !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 页面头部 -->
+<div class="page-header">
+    <div>
+        <h2><i class="layui-icon layui-icon-set"></i>采集规则库</h2>
+        <p>管理不同站点的采集规则，配置XPath和请求头信息，支持关联多个数据来源</p>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-row">
+    <div class="stat-mini">
+        <div class="stat-icon"><i class="layui-icon layui-icon-set"></i></div>
+        <div class="stat-text">
+            <h3 id="statTotal">0</h3>
+            <p>规则总数</p>
+        </div>
+    </div>
+    <div class="stat-mini">
+        <div class="stat-icon"><i class="layui-icon layui-icon-ok-circle"></i></div>
+        <div class="stat-text">
+            <h3 id="statEnabled">0</h3>
+            <p>已启用</p>
+        </div>
+    </div>
+    <div class="stat-mini">
+        <div class="stat-icon"><i class="layui-icon layui-icon-chart"></i></div>
+        <div class="stat-text">
+            <h3 id="statSuccessRate">-</h3>
+            <p>平均成功率</p>
+        </div>
+    </div>
+</div>
+
+<!-- 工具栏 -->
+<div class="toolbar-card">
+    <div class="toolbar-row">
+        <div class="toolbar-left">
+            <input type="text" id="searchKeyword" class="layui-input search-input" placeholder="搜索站点名称/域名...">
+            <select id="filterStatus">
+                <option value="">全部状态</option>
+                <option value="1">启用</option>
+                <option value="0">禁用</option>
+            </select>
+            <button class="toolbar-btn btn-default" id="btnSearch"><i class="layui-icon layui-icon-search"></i>搜索</button>
+            <button class="toolbar-btn btn-default" id="btnRefresh"><i class="layui-icon layui-icon-refresh"></i></button>
+        </div>
+        <div class="toolbar-right">
+            <button class="toolbar-btn btn-success" id="btnAdd"><i class="layui-icon layui-icon-add-1"></i>新增规则</button>
+            <button class="toolbar-btn btn-danger" id="btnBatchDelete"><i class="layui-icon layui-icon-delete"></i>批量删除</button>
+        </div>
+    </div>
+</div>
+
+<!-- 数据表格 -->
+<div class="table-card">
+    <table class="layui-hide" id="rulesTable" lay-filter="rulesTable"></table>
+</div>
+
+<!-- 站点信息模板 -->
+{% raw %}
+<script type="text/html" id="siteTpl">
+    <div class="site-info">
+        <span class="site-name">{{d.site_name}}</span>
+        <span class="site-domain">{{d.site_domain}}</span>
+    </div>
+</script>
+
+<!-- 适用来源模板 -->
+<script type="text/html" id="sourcesTpl">
+    <div class="source-tags">
+        {{# if(d.applicable_sources && d.applicable_sources.length > 0){ }}
+            {{# d.applicable_sources.forEach(function(s){ }}
+            <span class="source-tag">{{s}}</span>
+            {{# }); }}
+        {{# } else { }}
+            <span class="source-tag empty">未配置</span>
+        {{# } }}
+    </div>
+</script>
+
+<!-- 优先级模板 -->
+<script type="text/html" id="priorityTpl">
+    {{# if(d.priority >= 80){ }}
+    <span class="priority-tag priority-high">高 ({{d.priority}})</span>
+    {{# } else if(d.priority >= 50){ }}
+    <span class="priority-tag priority-medium">中 ({{d.priority}})</span>
+    {{# } else { }}
+    <span class="priority-tag priority-normal">低 ({{d.priority}})</span>
+    {{# } }}
+</script>
+
+<!-- 成功率模板 -->
+<script type="text/html" id="rateTpl">
+    <div class="success-rate">
+        {{# var total = (d.success_count || 0) + (d.fail_count || 0); }}
+        {{# if(total > 0){ }}
+            {{# var rate = ((d.success_count || 0) / total * 100).toFixed(1); }}
+            {{# var rateClass = rate >= 70 ? 'good' : (rate >= 40 ? 'medium' : 'bad'); }}
+            <span class="rate-value {{rateClass}}">{{rate}}%</span>
+            <span class="rate-detail">{{d.success_count || 0}}/{{total}}</span>
+        {{# } else { }}
+            <span class="rate-value" style="color:#999;">-</span>
+            <span class="rate-detail">暂无数据</span>
+        {{# } }}
+    </div>
+</script>
+
+<!-- XPath模板 -->
+<script type="text/html" id="xpathTpl">
+    <div style="display:flex;flex-direction:column;gap:4px;">
+        {{# if(d.title_xpath){ }}
+        <div class="xpath-info" title="标题: {{d.title_xpath}}">标题: {{d.title_xpath}}</div>
+        {{# } else { }}
+        <div class="xpath-info xpath-empty">标题: 未配置</div>
+        {{# } }}
+        {{# if(d.content_xpath){ }}
+        <div class="xpath-info" title="内容: {{d.content_xpath}}">内容: {{d.content_xpath}}</div>
+        {{# } else { }}
+        <div class="xpath-info xpath-empty">内容: 未配置</div>
+        {{# } }}
+    </div>
+</script>
+
+<!-- 状态模板 -->
+<script type="text/html" id="statusTpl">
+    {{# if(d.status === 1){ }}
+    <span class="status-tag enabled"><i class="layui-icon layui-icon-ok-circle"></i>启用</span>
+    {{# } else { }}
+    <span class="status-tag disabled"><i class="layui-icon layui-icon-close-fill"></i>禁用</span>
+    {{# } }}
+</script>
+
+<!-- 操作按钮模板 -->
+<script type="text/html" id="optTpl">
+    <button class="opt-btn view" lay-event="view" title="查看详情"><i class="layui-icon layui-icon-about"></i></button>
+    <button class="opt-btn edit" lay-event="edit" title="编辑"><i class="layui-icon layui-icon-edit"></i></button>
+    <button class="opt-btn copy" lay-event="copy" title="复制规则"><i class="layui-icon layui-icon-file"></i></button>
+    <button class="opt-btn test" lay-event="test" title="测试采集"><i class="layui-icon layui-icon-play"></i></button>
+    <button class="opt-btn data" lay-event="related" title="关联数据"><i class="layui-icon layui-icon-chart"></i></button>
+    <button class="opt-btn delete" lay-event="delete" title="删除"><i class="layui-icon layui-icon-delete"></i></button>
+</script>
+
+<!-- 使用次数模板 -->
+<script type="text/html" id="usageTpl">
+{% raw %}
+    {{# var count = (d.success_count || 0) + (d.fail_count || 0); }}
+    <div class="usage-cell">
+        {{# if(count > 0) { }}
+        <span class="usage-count active" onclick="viewRelatedData({{d.id}}, '{{d.site_name}}')">{{count}}</span>
+        {{# } else { }}
+        <span class="usage-count">0</span>
+        {{# } }}
+        <span class="usage-label">次采集</span>
+    </div>
+{% endraw %}
+</script>
+
+<!-- 新增/编辑表单 -->
+<script type="text/html" id="formTpl">
+    <form class="layui-form" lay-filter="ruleForm" style="padding: 20px;">
+        <input type="hidden" name="id">
+        <div class="form-group">
+            <label>站点名称<span class="required">*</span></label>
+            <input type="text" name="site_name" class="layui-input" placeholder="例如：人民网" lay-verify="required">
+        </div>
+        <div class="form-group">
+            <label>站点域名<span class="required">*</span></label>
+            <input type="text" name="site_domain" class="layui-input" placeholder="例如：people.com.cn" lay-verify="required">
+            <div class="help-text">填写站点的主域名，用于匹配URL</div>
+        </div>
+        <div class="form-group">
+            <label>适用来源</label>
+            <div class="source-input-wrap" id="sourceInputWrap">
+                <input type="text" class="tag-input" id="sourceTagInput" placeholder="输入来源名称后按回车添加...">
+            </div>
+            <input type="hidden" name="applicable_sources" id="applicableSourcesInput">
+            <div class="preset-sources">
+                <span class="preset-btn" data-source="百度新闻">+ 百度新闻</span>
+                <span class="preset-btn" data-source="360新闻">+ 360新闻</span>
+                <span class="preset-btn" data-source="搜狗新闻">+ 搜狗新闻</span>
+                <span class="preset-btn" data-source="今日头条">+ 今日头条</span>
+                <span class="preset-btn" data-source="网易新闻">+ 网易新闻</span>
+            </div>
+            <div class="help-text">配置此规则适用的数据来源，系统会根据来源自动匹配规则</div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>优先级</label>
+                <select name="priority">
+                    <option value="0">低 (0)</option>
+                    <option value="50">中 (50)</option>
+                    <option value="80">高 (80)</option>
+                    <option value="100">最高 (100)</option>
+                </select>
+                <div class="help-text">优先级越高，匹配时优先使用</div>
+            </div>
+            <div class="form-group">
+                <label>状态</label>
+                <select name="status">
+                    <option value="1">启用</option>
+                    <option value="0">禁用</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>标题XPath</label>
+            <input type="text" name="title_xpath" class="layui-input" placeholder="例如：//h1[@class='title']/text()">
+            <div class="help-text">用于提取新闻详情页标题的XPath表达式</div>
+        </div>
+        <div class="form-group">
+            <label>内容XPath</label>
+            <input type="text" name="content_xpath" class="layui-input" placeholder="例如：//div[@class='content']//p/text()">
+            <div class="help-text">用于提取新闻详情页正文内容的XPath表达式</div>
+        </div>
+        <div class="form-group">
+            <label>Request Headers</label>
+            <textarea name="request_headers" class="layui-textarea" style="height:120px;" placeholder="支持两种格式：
+1. JSON格式: {&quot;User-Agent&quot;: &quot;Mozilla/5.0...&quot;}
+2. 原始文本格式(从浏览器复制):
+accept
+text/html,application/xhtml+xml
+user-agent
+Mozilla/5.0..."></textarea>
+            <div class="help-text">支持直接粘贴浏览器开发者工具中的请求头</div>
+        </div>
+        <div class="form-group">
+            <label>备注说明</label>
+            <textarea name="description" class="layui-textarea" style="height:60px;" placeholder="可选，添加规则说明..."></textarea>
+        </div>
+    </form>
+</script>
+
+<!-- 详情模板 -->
+<script type="text/html" id="detailTpl">
+    <div style="padding:20px;line-height:2;">
+        <p><strong>站点名称：</strong><span id="detail_site_name"></span></p>
+        <p><strong>站点域名：</strong><span id="detail_site_domain"></span></p>
+        <p><strong>适用来源：</strong><span id="detail_sources"></span></p>
+        <p><strong>优先级：</strong><span id="detail_priority"></span></p>
+        <p><strong>采集统计：</strong><span id="detail_stats"></span></p>
+        <p><strong>标题XPath：</strong><code id="detail_title_xpath" style="background:#f5f5f5;padding:2px 8px;border-radius:4px;"></code></p>
+        <p><strong>内容XPath：</strong><code id="detail_content_xpath" style="background:#f5f5f5;padding:2px 8px;border-radius:4px;"></code></p>
+        <p><strong>Request Headers：</strong></p>
+        <pre id="detail_headers" style="background:#f5f5f5;padding:10px;border-radius:6px;max-height:150px;overflow:auto;font-size:12px;"></pre>
+        <p><strong>状态：</strong><span id="detail_status"></span></p>
+        <p><strong>备注：</strong><span id="detail_description"></span></p>
+        <p><strong>创建时间：</strong><span id="detail_created_at"></span></p>
+        <p><strong>更新时间：</strong><span id="detail_updated_at"></span></p>
+    </div>
+</script>
+
+<!-- 测试采集模板 -->
+<script type="text/html" id="testTpl">
+    <div class="test-result">
+        <div class="test-url">
+            <label style="display:block;margin-bottom:8px;font-weight:600;">测试URL</label>
+            <input type="text" id="testUrl" placeholder="请输入要测试采集的URL...">
+        </div>
+        <div id="testResultArea" style="display:none;">
+            <label style="display:block;margin-bottom:8px;font-weight:600;">采集结果</label>
+            <div class="result-content" id="resultContent"></div>
+        </div>
+    </div>
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+layui.use(['table', 'form', 'layer'], function(){
+    var table = layui.table;
+    var form = layui.form;
+    var layer = layui.layer;
+    var $ = layui.$;
+
+    // 当前编辑的来源标签列表
+    var currentSourceTags = [];
+
+    /**
+     * 将原始文本格式的headers转换为JSON格式
+     */
+    function parseRawHeaders(text) {
+        text = (text || '').trim();
+        if (!text) return '';
+
+        if (text.startsWith('{')) {
+            try {
+                JSON.parse(text);
+                return text;
+            } catch(e) {}
+        }
+
+        var lines = text.split('\n').map(function(line){ return line.trim(); }).filter(function(line){ return line; });
+        var headers = {};
+
+        for (var i = 0; i < lines.length - 1; i += 2) {
+            var key = lines[i];
+            var value = lines[i + 1];
+            if (key && value) {
+                headers[key] = value;
+            }
+        }
+
+        if (Object.keys(headers).length === 0) {
+            return '';
+        }
+
+        return JSON.stringify(headers, null, 2);
+    }
+
+    // 加载统计
+    function loadStats() {
+        $.get('/api/rules/stats', function(res){
+            if(res.code === 0) {
+                $('#statTotal').text(res.data.total || 0);
+                $('#statEnabled').text(res.data.enabled || 0);
+                $('#statSuccessRate').text(res.data.success_rate || '-');
+            }
+        });
+    }
+    loadStats();
+
+    // 渲染表格
+    var tableIns = table.render({
+        elem: '#rulesTable',
+        url: '/api/rules/list',
+        page: true,
+        limit: 10,
+        limits: [10, 20, 50],
+        skin: 'line',
+        size: 'lg',
+        parseData: function(res){
+            return {
+                "code": res.code,
+                "msg": res.msg || '',
+                "count": res.count || 0,
+                "data": res.data || []
+            };
+        },
+        cols: [[
+            {type: 'checkbox', width: 50},
+            {field: 'id', title: 'ID', width: 55, align: 'center'},
+            {field: 'site_name', title: '站点信息', minWidth: 150, templet: '#siteTpl'},
+            {field: 'applicable_sources', title: '适用来源', minWidth: 130, templet: '#sourcesTpl'},
+            {field: 'priority', title: '优先级', width: 80, align: 'center', templet: '#priorityTpl'},
+            {field: 'usage', title: '使用次数', width: 75, align: 'center', templet: '#usageTpl'},
+            {field: 'success_rate', title: '成功率', width: 75, align: 'center', templet: '#rateTpl'},
+            {field: 'title_xpath', title: 'XPath配置', minWidth: 160, templet: '#xpathTpl'},
+            {field: 'status', title: '状态', width: 70, align: 'center', templet: '#statusTpl'},
+            {title: '操作', width: 200, align: 'center', templet: '#optTpl'}
+        ]]
+    });
+
+    // 搜索
+    $('#btnSearch').on('click', function(){
+        reloadTable();
+    });
+
+    $('#searchKeyword').on('keypress', function(e){
+        if(e.keyCode === 13){
+            reloadTable();
+        }
+    });
+
+    $('#filterStatus').on('change', function(){
+        reloadTable();
+    });
+
+    $('#btnRefresh').on('click', function(){
+        $('#searchKeyword').val('');
+        $('#filterStatus').val('');
+        reloadTable();
+        loadStats();
+    });
+
+    function reloadTable(){
+        tableIns.reload({
+            where: {
+                keyword: $('#searchKeyword').val(),
+                status: $('#filterStatus').val()
+            },
+            page: {curr: 1}
+        });
+    }
+
+    // 新增规则
+    $('#btnAdd').on('click', function(){
+        openForm('新增采集规则', {});
+    });
+
+    // 批量删除
+    $('#btnBatchDelete').on('click', function(){
+        var checkStatus = table.checkStatus('rulesTable');
+        var data = checkStatus.data;
+        if(data.length === 0){
+            layer.msg('请选择要删除的规则', {icon: 0});
+            return;
+        }
+        layer.confirm('确定要删除选中的 ' + data.length + ' 条规则吗？', {icon: 3}, function(index){
+            var ids = data.map(function(item){ return item.id; });
+            $.ajax({
+                url: '/api/rules/delete-batch',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ids: ids}),
+                success: function(res){
+                    if(res.code === 0){
+                        layer.msg(res.msg, {icon: 1});
+                        reloadTable();
+                        loadStats();
+                    } else {
+                        layer.msg(res.msg, {icon: 2});
+                    }
+                }
+            });
+            layer.close(index);
+        });
+    });
+
+    // 表格工具栏事件
+    table.on('tool(rulesTable)', function(obj){
+        var data = obj.data;
+        var event = obj.event;
+
+        if(event === 'view'){
+            showDetail(data);
+        } else if(event === 'edit'){
+            openForm('编辑采集规则', data);
+        } else if(event === 'copy'){
+            copyRule(data);
+        } else if(event === 'test'){
+            openTestDialog(data);
+        } else if(event === 'related'){
+            viewRelatedData(data.id, data.site_name);
+        } else if(event === 'delete'){
+            layer.confirm('确定要删除规则【' + data.site_name + '】吗？', {icon: 3}, function(index){
+                $.ajax({
+                    url: '/api/rules/delete',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({id: data.id}),
+                    success: function(res){
+                        if(res.code === 0){
+                            layer.msg('删除成功', {icon: 1});
+                            reloadTable();
+                            loadStats();
+                        } else {
+                            layer.msg(res.msg, {icon: 2});
+                        }
+                    }
+                });
+                layer.close(index);
+            });
+        }
+    });
+
+    // 复制规则
+    function copyRule(data) {
+        layer.confirm('确定要复制规则【' + data.site_name + '】吗？<br><span style="font-size:12px;color:#888;">复制后的规则默认为禁用状态</span>', {
+            icon: 3,
+            title: '复制规则'
+        }, function(index){
+            var loadIdx = layer.load(1);
+            $.ajax({
+                url: '/api/rules/copy',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({id: data.id}),
+                success: function(res){
+                    layer.close(loadIdx);
+                    if(res.code === 0){
+                        layer.msg(res.msg, {icon: 1});
+                        reloadTable();
+                        loadStats();
+                        // 询问是否立即编辑
+                        layer.confirm('是否立即编辑新规则？', {icon: 6}, function(idx){
+                            layer.close(idx);
+                            openForm('编辑采集规则', res.data);
+                        });
+                    } else {
+                        layer.msg(res.msg, {icon: 2});
+                    }
+                },
+                error: function(){
+                    layer.close(loadIdx);
+                    layer.msg('请求失败', {icon: 2});
+                }
+            });
+            layer.close(index);
+        });
+    }
+
+    // 查看关联数据
+    window.viewRelatedData = function(ruleId, ruleName) {
+        var loadIdx = layer.load(1);
+        $.get('/api/rules/' + ruleId + '/related-data', function(res) {
+            layer.close(loadIdx);
+
+            if(res.code === 0) {
+                var data = res.data;
+                var html = '<div style="padding:20px;">';
+                html += '<h4 style="margin-bottom:15px;color:#333;"><i class="layui-icon layui-icon-set" style="color:#667eea;"></i> 规则: ' + ruleName + '</h4>';
+
+                html += '<div style="display:flex;gap:20px;margin-bottom:20px;">';
+                html += '<div style="flex:1;text-align:center;padding:15px;background:#f8f9fa;border-radius:8px;">';
+                html += '<div style="font-size:24px;font-weight:700;color:#667eea;">' + data.usage_count + '</div>';
+                html += '<div style="font-size:12px;color:#888;">关联数据</div>';
+                html += '</div>';
+                html += '<div style="flex:1;text-align:center;padding:15px;background:#e8f5e9;border-radius:8px;">';
+                html += '<div style="font-size:24px;font-weight:700;color:#43a047;">' + data.success_count + '</div>';
+                html += '<div style="font-size:12px;color:#888;">采集成功</div>';
+                html += '</div>';
+                html += '<div style="flex:1;text-align:center;padding:15px;background:#ffebee;border-radius:8px;">';
+                html += '<div style="font-size:24px;font-weight:700;color:#e53935;">' + data.fail_count + '</div>';
+                html += '<div style="font-size:12px;color:#888;">采集失败</div>';
+                html += '</div>';
+                html += '</div>';
+
+                if(data.usage_count > 0) {
+                    html += '<div style="text-align:center;">';
+                    html += '<a href="/admin/data-warehouse?rule=' + encodeURIComponent(ruleName) + '" class="layui-btn" style="border-radius:20px;">';
+                    html += '<i class="layui-icon layui-icon-file"></i> 查看关联数据</a>';
+                    html += '</div>';
+                } else {
+                    html += '<div style="text-align:center;padding:20px;color:#999;">';
+                    html += '<i class="layui-icon layui-icon-face-smile" style="font-size:30px;display:block;margin-bottom:10px;"></i>';
+                    html += '暂无使用此规则采集的数据';
+                    html += '</div>';
+                }
+
+                html += '</div>';
+
+                layer.open({
+                    type: 1,
+                    title: '规则使用统计',
+                    area: ['450px', 'auto'],
+                    content: html,
+                    shadeClose: true
+                });
+            } else {
+                layer.msg(res.msg, {icon: 2});
+            }
+        });
+    };
+
+    // 打开表单
+    function openForm(title, data){
+        currentSourceTags = data.applicable_sources || [];
+        var content = document.getElementById('formTpl').innerHTML;
+        var layerIndex = layer.open({
+            type: 1,
+            title: title,
+            area: ['600px', '680px'],
+            content: content,
+            success: function(layero, index){
+                form.render();
+
+                // 渲染来源标签
+                renderSourceTags(layero);
+
+                // 填充数据
+                if(data.id){
+                    layero.find('input[name="id"]').val(data.id);
+                    layero.find('input[name="site_name"]').val(data.site_name);
+                    layero.find('input[name="site_domain"]').val(data.site_domain);
+                    layero.find('input[name="title_xpath"]').val(data.title_xpath || '');
+                    layero.find('input[name="content_xpath"]').val(data.content_xpath || '');
+                    layero.find('textarea[name="request_headers"]').val(data.request_headers_str || '');
+                    layero.find('select[name="priority"]').val(data.priority || 0);
+                    layero.find('select[name="status"]').val(data.status);
+                    layero.find('textarea[name="description"]').val(data.description || '');
+                    form.render('select');
+                }
+
+                // 来源标签输入事件
+                layero.find('#sourceTagInput').on('keypress', function(e){
+                    if(e.keyCode === 13){
+                        e.preventDefault();
+                        var val = $(this).val().trim();
+                        if(val && currentSourceTags.indexOf(val) === -1){
+                            currentSourceTags.push(val);
+                            renderSourceTags(layero);
+                        }
+                        $(this).val('');
+                    }
+                });
+
+                // 预设来源点击
+                layero.find('.preset-btn').on('click', function(){
+                    var source = $(this).data('source');
+                    if(currentSourceTags.indexOf(source) === -1){
+                        currentSourceTags.push(source);
+                        renderSourceTags(layero);
+                    }
+                });
+            },
+            btn: ['保存', '取消'],
+            yes: function(index, layero){
+                var formData = {};
+                layero.find('form').serializeArray().forEach(function(item){
+                    formData[item.name] = item.value;
+                });
+
+                if(!formData.site_name || !formData.site_domain){
+                    layer.msg('请填写站点名称和域名', {icon: 0});
+                    return;
+                }
+
+                // 设置适用来源
+                formData.applicable_sources = currentSourceTags;
+
+                // 转换Headers格式
+                if(formData.request_headers){
+                    var convertedHeaders = parseRawHeaders(formData.request_headers);
+                    if(convertedHeaders){
+                        formData.request_headers = convertedHeaders;
+                    } else {
+                        layer.msg('Request Headers格式无效', {icon: 0});
+                        return;
+                    }
+                }
+
+                var url = formData.id ? '/api/rules/update' : '/api/rules/add';
+                $.ajax({
+                    url: url,
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(formData),
+                    success: function(res){
+                        if(res.code === 0){
+                            layer.msg(res.msg, {icon: 1});
+                            layer.close(index);
+                            reloadTable();
+                            loadStats();
+                        } else {
+                            layer.msg(res.msg, {icon: 2});
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    // 渲染来源标签
+    function renderSourceTags(layero){
+        var wrap = layero.find('#sourceInputWrap');
+        var input = layero.find('#sourceTagInput');
+        wrap.find('.tag-item').remove();
+
+        currentSourceTags.forEach(function(tag){
+            var tagHtml = '<span class="tag-item" data-tag="' + tag + '">' + tag + '<span class="remove-tag">&times;</span></span>';
+            input.before(tagHtml);
+        });
+
+        // 更新hidden input
+        layero.find('#applicableSourcesInput').val(JSON.stringify(currentSourceTags));
+
+        // 绑定删除事件
+        wrap.find('.remove-tag').off('click').on('click', function(){
+            var tagVal = $(this).parent().data('tag');
+            currentSourceTags = currentSourceTags.filter(function(t){ return t !== tagVal; });
+            renderSourceTags(layero);
+        });
+    }
+
+    // 显示详情
+    function showDetail(data){
+        var content = document.getElementById('detailTpl').innerHTML;
+        layer.open({
+            type: 1,
+            title: '规则详情 - ' + data.site_name,
+            area: ['600px', '580px'],
+            content: content,
+            success: function(layero){
+                layero.find('#detail_site_name').text(data.site_name);
+                layero.find('#detail_site_domain').text(data.site_domain);
+                layero.find('#detail_sources').text(data.applicable_sources_str || '未配置');
+
+                var priorityText = data.priority >= 80 ? '高' : (data.priority >= 50 ? '中' : '低');
+                layero.find('#detail_priority').text(priorityText + ' (' + data.priority + ')');
+
+                var total = (data.success_count || 0) + (data.fail_count || 0);
+                var statsText = total > 0 ?
+                    '成功 ' + (data.success_count || 0) + ' 次，失败 ' + (data.fail_count || 0) + ' 次，成功率 ' + data.success_rate :
+                    '暂无采集数据';
+                layero.find('#detail_stats').text(statsText);
+
+                layero.find('#detail_title_xpath').text(data.title_xpath || '未配置');
+                layero.find('#detail_content_xpath').text(data.content_xpath || '未配置');
+
+                try {
+                    var headersJson = data.request_headers_str ? JSON.stringify(JSON.parse(data.request_headers_str), null, 2) : '未配置';
+                    layero.find('#detail_headers').text(headersJson);
+                } catch(e) {
+                    layero.find('#detail_headers').text(data.request_headers_str || '未配置');
+                }
+
+                layero.find('#detail_status').html(data.status === 1 ? '<span style="color:#11998e">启用</span>' : '<span style="color:#ff6b6b">禁用</span>');
+                layero.find('#detail_description').text(data.description || '-');
+                layero.find('#detail_created_at').text(data.created_at);
+                layero.find('#detail_updated_at').text(data.updated_at);
+            }
+        });
+    }
+
+    // 打开测试采集对话框
+    function openTestDialog(ruleData){
+        var content = document.getElementById('testTpl').innerHTML;
+        var testLayerIndex = layer.open({
+            type: 1,
+            title: '测试采集 - ' + ruleData.site_name,
+            area: ['600px', '500px'],
+            content: content,
+            btn: ['开始测试', '关闭'],
+            yes: function(index, layero){
+                var testUrl = layero.find('#testUrl').val().trim();
+                if(!testUrl){
+                    layer.msg('请输入测试URL', {icon: 0});
+                    return;
+                }
+
+                var loadIdx = layer.load(1, {shade: [0.3, '#000']});
+                $.ajax({
+                    url: '/api/rules/test',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        rule_id: ruleData.id,
+                        url: testUrl
+                    }),
+                    success: function(res){
+                        layer.close(loadIdx);
+                        layero.find('#testResultArea').show();
+
+                        var html = '';
+                        if(res.code === 0){
+                            html += '<div class="result-item"><label>状态</label><div class="value success">采集成功</div></div>';
+                            html += '<div class="result-item"><label>标题</label><div class="value">' + (res.data.title || '-') + '</div></div>';
+                            html += '<div class="result-item"><label>发布时间</label><div class="value">' + (res.data.publish_time || '-') + '</div></div>';
+                            html += '<div class="result-item"><label>作者</label><div class="value">' + (res.data.author || '-') + '</div></div>';
+                            html += '<div class="result-item"><label>正文预览</label><div class="value">' + ((res.data.content || '').substring(0, 300) + '...') + '</div></div>';
+                        } else {
+                            html += '<div class="result-item"><label>状态</label><div class="value error">采集失败</div></div>';
+                            html += '<div class="result-item"><label>错误信息</label><div class="value error">' + res.msg + '</div></div>';
+                        }
+                        layero.find('#resultContent').html(html);
+                    },
+                    error: function(){
+                        layer.close(loadIdx);
+                        layer.msg('请求失败', {icon: 2});
+                    }
+                });
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

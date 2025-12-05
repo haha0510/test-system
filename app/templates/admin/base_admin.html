@@ -282,6 +282,15 @@
             <li class="layui-nav-item {% if request.endpoint == 'main.data_warehouse' %}layui-this{% endif %}">
                 <a href="{{ url_for('main.data_warehouse') }}"><i class="layui-icon layui-icon-template-1"></i>数据仓库</a>
             </li>
+            <li class="layui-nav-item {% if request.endpoint == 'main.crawl_rules' %}layui-this{% endif %}">
+                <a href="{{ url_for('main.crawl_rules') }}"><i class="layui-icon layui-icon-set"></i>规则库</a>
+            </li>
+            <li class="layui-nav-item {% if request.endpoint == 'main.ai_engines' %}layui-this{% endif %}">
+                <a href="{{ url_for('main.ai_engines') }}"><i class="layui-icon layui-icon-auz"></i>AI引擎</a>
+            </li>
+            <li class="layui-nav-item {% if request.endpoint == 'main.crawlers' %}layui-this{% endif %}">
+                <a href="{{ url_for('main.crawlers') }}"><i class="layui-icon layui-icon-website"></i>爬虫管理</a>
+            </li>
             {% if session.role == 'admin' %}
             <li class="layui-nav-item {% if request.endpoint == 'main.user_manage' %}layui-this{% endif %}">
                 <a href="{{ url_for('main.user_manage') }}"><i class="layui-icon layui-icon-user"></i>用户管理</a>

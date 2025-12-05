@@ -13,6 +13,20 @@
         margin-bottom: 24px;
         position: relative;
         overflow: hidden;
+        background-size: cover;
+        background-position: center;
+    }
+    .welcome-section.has-bg {
+        background-blend-mode: overlay;
+    }
+    .welcome-section .bg-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, rgba(26,26,46,0.85) 0%, rgba(22,33,62,0.8) 50%, rgba(15,52,96,0.75) 100%);
+        z-index: 0;
     }
     .welcome-section::before {
         content: '';
@@ -23,6 +37,7 @@
         height: 200%;
         background: radial-gradient(circle, rgba(0,242,255,0.1) 0%, transparent 60%);
         animation: float 8s ease-in-out infinite;
+        z-index: 1;
     }
     .welcome-section::after {
         content: '';
@@ -33,6 +48,7 @@
         height: 150%;
         background: radial-gradient(circle, rgba(102,126,234,0.1) 0%, transparent 60%);
         animation: float 10s ease-in-out infinite reverse;
+        z-index: 1;
     }
     @keyframes float {
         0%, 100% { transform: translateY(0) rotate(0deg); }
@@ -40,7 +56,7 @@
     }
     .welcome-content {
         position: relative;
-        z-index: 1;
+        z-index: 2;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -75,6 +91,27 @@
         font-size: 120px;
         opacity: 0.2;
         color: #00f2ff;
+    }
+    .bg-setting-btn {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        z-index: 10;
+        background: rgba(255,255,255,0.15);
+        backdrop-filter: blur(10px);
+        border: none;
+        border-radius: 8px;
+        padding: 8px 12px;
+        color: #fff;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .bg-setting-btn:hover {
+        background: rgba(255,255,255,0.25);
     }
 
     /* 统计卡片 */
@@ -359,7 +396,12 @@
 
 {% block content %}
 <!-- 欢迎区域 -->
-<div class="welcome-section">
+<div class="welcome-section" id="welcomeSection">
+    <div class="bg-overlay" id="bgOverlay" style="display: none;"></div>
+    <button class="bg-setting-btn" id="bgSettingBtn" title="自定义背景">
+        <i class="layui-icon layui-icon-picture"></i>
+        <span>换背景</span>
+    </button>
     <div class="welcome-content">
         <div class="welcome-text">
             <h1>政企智能舆情分析系统</h1>
@@ -514,6 +556,133 @@
 <script>
 layui.use(['layer'], function(){
     var layer = layui.layer;
+
+    // 加载仪表盘背景设置
+    function loadDashboardBg() {
+        fetch('/api/settings/dashboard-bg')
+            .then(res => res.json())
+            .then(data => {
+                if(data.code === 0 && data.data && data.data.bg_url) {
+                    applyBackground(data.data.bg_url);
+                }
+            })
+            .catch(err => console.log('加载背景设置失败'));
+    }
+
+    // 应用背景图片
+    function applyBackground(url) {
+        if(!url) return;
+        var section = document.getElementById('welcomeSection');
+        var overlay = document.getElementById('bgOverlay');
+        section.style.backgroundImage = 'url(' + url + ')';
+        section.classList.add('has-bg');
+        overlay.style.display = 'block';
+    }
+
+    // 移除背景图片
+    function removeBackground() {
+        var section = document.getElementById('welcomeSection');
+        var overlay = document.getElementById('bgOverlay');
+        section.style.backgroundImage = '';
+        section.classList.remove('has-bg');
+        overlay.style.display = 'none';
+    }
+
+    // 背景设置按钮点击事件
+    document.getElementById('bgSettingBtn').onclick = function() {
+        layer.open({
+            type: 1,
+            title: '自定义仪表盘背景',
+            area: ['500px', '320px'],
+            content: '<div style="padding: 24px;">' +
+                '<div class="layui-form-item">' +
+                    '<label class="layui-form-label" style="width: 90px;">图片URL</label>' +
+                    '<div class="layui-input-block" style="margin-left: 120px;">' +
+                        '<input type="text" id="bgUrlInput" class="layui-input" placeholder="请输入图片URL地址">' +
+                    '</div>' +
+                '</div>' +
+                '<div class="layui-form-item">' +
+                    '<label class="layui-form-label" style="width: 90px;">预览</label>' +
+                    '<div class="layui-input-block" style="margin-left: 120px;">' +
+                        '<div id="bgPreview" style="width: 100%; height: 100px; border: 1px dashed #ddd; border-radius: 8px; background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; color: #999;">输入URL后自动预览</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="layui-form-item" style="margin-top: 20px;">' +
+                    '<div class="layui-input-block" style="margin-left: 120px;">' +
+                        '<button class="layui-btn" id="saveBgBtn"><i class="layui-icon layui-icon-ok"></i> 保存设置</button>' +
+                        '<button class="layui-btn layui-btn-primary" id="resetBgBtn"><i class="layui-icon layui-icon-refresh"></i> 恢复默认</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>',
+            success: function(layero, index) {
+                var input = document.getElementById('bgUrlInput');
+                var preview = document.getElementById('bgPreview');
+
+                // URL输入预览
+                input.oninput = function() {
+                    var url = this.value.trim();
+                    if(url) {
+                        preview.style.backgroundImage = 'url(' + url + ')';
+                        preview.innerHTML = '';
+                    } else {
+                        preview.style.backgroundImage = '';
+                        preview.innerHTML = '输入URL后自动预览';
+                    }
+                };
+
+                // 保存按钮
+                document.getElementById('saveBgBtn').onclick = function() {
+                    var url = input.value.trim();
+                    fetch('/api/settings/dashboard-bg', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({bg_url: url})
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.code === 0) {
+                            if(url) {
+                                applyBackground(url);
+                            } else {
+                                removeBackground();
+                            }
+                            layer.close(index);
+                            layer.msg('背景设置已保存', {icon: 1});
+                        } else {
+                            layer.msg(data.msg || '保存失败', {icon: 2});
+                        }
+                    })
+                    .catch(err => {
+                        layer.msg('保存失败: ' + err.message, {icon: 2});
+                    });
+                };
+
+                // 恢复默认按钮
+                document.getElementById('resetBgBtn').onclick = function() {
+                    input.value = '';
+                    preview.style.backgroundImage = '';
+                    preview.innerHTML = '输入URL后自动预览';
+
+                    fetch('/api/settings/dashboard-bg', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({bg_url: ''})
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.code === 0) {
+                            removeBackground();
+                            layer.close(index);
+                            layer.msg('已恢复默认背景', {icon: 1});
+                        }
+                    });
+                };
+            }
+        });
+    };
+
+    // 页面加载时加载背景设置
+    loadDashboardBg();
 
     // 加载统计数据
     fetch('/api/warehouse/stats')

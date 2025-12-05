@@ -4,7 +4,7 @@ from functools import wraps
 from datetime import datetime
 from flask import Blueprint, render_template, jsonify, request, session, redirect, url_for
 from app import db
-from app.models import User, SystemConfig, CollectedNews
+from app.models import User, SystemConfig, CollectedNews, CrawlRule, AIEngine
 
 main_bp = Blueprint('main', __name__)
 
@@ -84,6 +84,13 @@ def data_collect():
 def data_warehouse():
     """数据仓库管理页面"""
     return render_template('admin/data_warehouse.html')
+
+
+@main_bp.route('/admin/crawl-rules')
+@login_required
+def crawl_rules():
+    """采集规则库页面"""
+    return render_template('admin/crawl_rules.html')
 
 
 @main_bp.route('/admin/users')
@@ -308,13 +315,13 @@ def api_save_settings():
 @login_required
 def api_search_news():
     """
-    搜索新闻接口（支持多数据源）
+    搜索新闻接口（支持动态爬虫配置）
 
     请求参数:
         - keyword: 搜索关键字（必填）
         - page: 页码，默认1
         - count: 目标获取数量，设置后自动翻页获取
-        - source: 数据源，可选值: baidu(默认), 360kuai
+        - source: 数据源代码（如 baidu, 360kuai）
 
     返回数据格式:
         {
@@ -324,6 +331,9 @@ def api_search_news():
             "data": [...]
         }
     """
+    from app.models import CrawlerConfig
+    import importlib
+
     # 支持GET和POST两种方式
     if request.method == 'POST':
         data = request.get_json() or {}
@@ -341,21 +351,42 @@ def api_search_news():
         return jsonify({'code': 1, 'msg': '请输入搜索关键字'})
 
     try:
-        # 根据数据源选择爬虫
-        if source == '360kuai':
-            from app.crawler_360kuai import search_360kuai_news
+        # 从数据库查找爬虫配置
+        crawler_config = CrawlerConfig.query.filter_by(code=source, status=1).first()
+
+        if crawler_config and crawler_config.crawler_module and crawler_config.crawler_class:
+            # 动态加载爬虫
+            module = importlib.import_module(crawler_config.crawler_module)
+            crawler_cls = getattr(module, crawler_config.crawler_class)
+            crawler_instance = crawler_cls()
+
             if count is not None:
-                news_list = search_360kuai_news(keyword, count=count)
+                news_list = crawler_instance.search_batch(keyword, count=count)
             else:
-                news_list = search_360kuai_news(keyword, page=page)
-            source_name = '360新闻'
+                news_list = crawler_instance.search(keyword, page=page)
+
+            source_name = crawler_config.name
+
+            # 更新使用统计
+            crawler_config.success_count = (crawler_config.success_count or 0) + 1
+            crawler_config.last_used_at = datetime.now()
+            db.session.commit()
         else:
-            from app.crawler import search_news
-            if count is not None:
-                news_list = search_news(keyword, count=count)
+            # 兼容旧逻辑：使用硬编码的爬虫
+            if source == '360kuai':
+                from app.crawler_360kuai import search_360kuai_news
+                if count is not None:
+                    news_list = search_360kuai_news(keyword, count=count)
+                else:
+                    news_list = search_360kuai_news(keyword, page=page)
+                source_name = '360新闻'
             else:
-                news_list = search_news(keyword, page=page)
-            source_name = '百度新闻'
+                from app.crawler import search_news
+                if count is not None:
+                    news_list = search_news(keyword, count=count)
+                else:
+                    news_list = search_news(keyword, page=page)
+                source_name = '百度新闻'
 
         return jsonify({
             'code': 0,
@@ -366,6 +397,13 @@ def api_search_news():
             'data': news_list
         })
     except Exception as e:
+        # 更新失败统计
+        try:
+            if 'crawler_config' in locals() and crawler_config:
+                crawler_config.fail_count = (crawler_config.fail_count or 0) + 1
+                db.session.commit()
+        except:
+            pass
         return jsonify({'code': 1, 'msg': f'抓取失败: {str(e)}'})
 
 
@@ -401,8 +439,10 @@ def api_deep_collect():
 @login_required
 def api_save_news():
     """
-    保存单条采集数据到数据库
+    保存单条采集数据到数据库（自动进行深度采集）
     """
+    from app.deep_crawler import RuleBasedCrawler
+
     data = request.get_json() or {}
 
     # 必填字段验证
@@ -418,23 +458,38 @@ def api_save_news():
         return jsonify({'code': 1, 'msg': '该新闻已存在于数据库中'})
 
     try:
+        source = data.get('source', '')
+
+        # 先进行深度采集
+        crawler = RuleBasedCrawler(db)
+        deep_result = crawler.deep_collect(url, source)
+
+        # 创建新闻记录
         news = CollectedNews(
-            title=title,
+            title=deep_result.get('title') or title,  # 优先使用深度采集的标题
             summary=data.get('summary', ''),
             cover=data.get('cover', ''),
             url=url,
-            source=data.get('source', ''),
+            source=source,
             keyword=data.get('keyword', ''),
-            content=data.get('content', ''),
-            publish_time=data.get('publish_time', ''),
-            author=data.get('author', ''),
-            deep_collected=data.get('deep_collected', False),
+            content=deep_result.get('content') or data.get('content', ''),
+            publish_time=deep_result.get('publish_time') or data.get('publish_time', ''),
+            author=deep_result.get('author') or data.get('author', ''),
+            deep_collected=deep_result.get('success', False),
+            deep_collected_at=datetime.now() if deep_result.get('success') else None,
+            rule_used=deep_result.get('rule_used') if deep_result.get('success') else None,
             collected_by=session.get('user_id')
         )
         db.session.add(news)
         db.session.commit()
 
-        return jsonify({'code': 0, 'msg': '保存成功', 'data': news.to_dict()})
+        msg = '保存成功'
+        if deep_result.get('success'):
+            msg += f'（已深度采集，规则：{deep_result.get("rule_used", "通用")}）'
+        else:
+            msg += '（深度采集失败，已保存基础信息）'
+
+        return jsonify({'code': 0, 'msg': msg, 'data': news.to_dict()})
     except Exception as e:
         db.session.rollback()
         return jsonify({'code': 1, 'msg': f'保存失败: {str(e)}'})
@@ -444,17 +499,22 @@ def api_save_news():
 @login_required
 def api_save_news_batch():
     """
-    批量保存采集数据到数据库
+    批量保存采集数据到数据库（自动进行深度采集）
     请求参数: { items: [...] }
     """
+    from app.deep_crawler import RuleBasedCrawler
+    import time
+
     data = request.get_json() or {}
     items = data.get('items', [])
 
     if not items:
         return jsonify({'code': 1, 'msg': '没有要保存的数据'})
 
+    crawler = RuleBasedCrawler(db)
     saved_count = 0
     skipped_count = 0
+    deep_success_count = 0
     errors = []
 
     for item in items:
@@ -471,21 +531,33 @@ def api_save_news_batch():
             continue
 
         try:
+            source = item.get('source', '')
+
+            # 进行深度采集
+            deep_result = crawler.deep_collect(url, source)
+
             news = CollectedNews(
-                title=title,
+                title=deep_result.get('title') or title,
                 summary=item.get('summary', ''),
                 cover=item.get('cover', ''),
                 url=url,
-                source=item.get('source', ''),
+                source=source,
                 keyword=item.get('keyword', ''),
-                content=item.get('content', ''),
-                publish_time=item.get('publish_time', ''),
-                author=item.get('author', ''),
-                deep_collected=item.get('deep_collected', False),
+                content=deep_result.get('content') or item.get('content', ''),
+                publish_time=deep_result.get('publish_time') or item.get('publish_time', ''),
+                author=deep_result.get('author') or item.get('author', ''),
+                deep_collected=deep_result.get('success', False),
+                deep_collected_at=datetime.now() if deep_result.get('success') else None,
+                rule_used=deep_result.get('rule_used') if deep_result.get('success') else None,
                 collected_by=session.get('user_id')
             )
             db.session.add(news)
             saved_count += 1
+            if deep_result.get('success'):
+                deep_success_count += 1
+
+            # 每次请求间隔，避免被封
+            time.sleep(0.3)
         except Exception as e:
             errors.append(str(e))
 
@@ -497,9 +569,10 @@ def api_save_news_batch():
 
     return jsonify({
         'code': 0,
-        'msg': f'保存完成：成功 {saved_count} 条，跳过 {skipped_count} 条',
+        'msg': f'保存完成：成功 {saved_count} 条（深度采集成功 {deep_success_count} 条），跳过 {skipped_count} 条',
         'data': {
             'saved': saved_count,
+            'deep_collected': deep_success_count,
             'skipped': skipped_count
         }
     })
@@ -581,6 +654,7 @@ def api_warehouse_list():
     keyword = request.args.get('keyword', '').strip()
     source = request.args.get('source', '').strip()
     deep_collected = request.args.get('deep_collected', '').strip()
+    rule = request.args.get('rule', '').strip()  # 按规则名筛选
 
     query = CollectedNews.query
 
@@ -601,6 +675,10 @@ def api_warehouse_list():
     # 深度采集状态筛选
     if deep_collected:
         query = query.filter(CollectedNews.deep_collected == (deep_collected == '1'))
+
+    # 按规则名筛选
+    if rule:
+        query = query.filter(CollectedNews.rule_used == rule)
 
     # 分页
     pagination = query.order_by(CollectedNews.created_at.desc()).paginate(
@@ -722,4 +800,1741 @@ def api_warehouse_ai_analyze():
         'code': 1,
         'msg': 'AI分析功能即将上线，敬请期待...'
     })
+
+
+# ============ 采集规则库API ============
+
+@main_bp.route('/api/rules/list', methods=['GET'])
+@login_required
+def api_rules_list():
+    """
+    获取采集规则列表（支持分页、搜索）
+    """
+    page = request.args.get('page', 1, type=int)
+    limit = request.args.get('limit', 10, type=int)
+    keyword = request.args.get('keyword', '').strip()
+    status = request.args.get('status', '').strip()
+
+    query = CrawlRule.query
+
+    # 关键词搜索
+    if keyword:
+        query = query.filter(
+            db.or_(
+                CrawlRule.site_name.like(f'%{keyword}%'),
+                CrawlRule.site_domain.like(f'%{keyword}%')
+            )
+        )
+
+    # 状态筛选
+    if status:
+        query = query.filter(CrawlRule.status == int(status))
+
+    # 分页
+    pagination = query.order_by(CrawlRule.created_at.desc()).paginate(
+        page=page, per_page=limit, error_out=False
+    )
+
+    return jsonify({
+        'code': 0,
+        'count': pagination.total,
+        'data': [r.to_dict() for r in pagination.items]
+    })
+
+
+@main_bp.route('/api/rules/all', methods=['GET'])
+@login_required
+def api_rules_all():
+    """
+    获取所有启用的采集规则（下拉选择用）
+    """
+    rules = CrawlRule.query.filter_by(status=1).order_by(CrawlRule.site_name).all()
+    return jsonify({
+        'code': 0,
+        'data': [r.to_dict() for r in rules]
+    })
+
+
+@main_bp.route('/api/rules/stats', methods=['GET'])
+@login_required
+def api_rules_stats():
+    """
+    获取采集规则统计信息
+    """
+    from sqlalchemy import func
+
+    # 总数
+    total = CrawlRule.query.count()
+
+    # 已启用
+    enabled = CrawlRule.query.filter_by(status=1).count()
+
+    # 计算平均成功率
+    stats = db.session.query(
+        func.sum(CrawlRule.success_count).label('total_success'),
+        func.sum(CrawlRule.fail_count).label('total_fail')
+    ).first()
+
+    total_attempts = (stats.total_success or 0) + (stats.total_fail or 0)
+    if total_attempts > 0:
+        success_rate = f"{(stats.total_success or 0) / total_attempts * 100:.1f}%"
+    else:
+        success_rate = '-'
+
+    return jsonify({
+        'code': 0,
+        'data': {
+            'total': total,
+            'enabled': enabled,
+            'success_rate': success_rate
+        }
+    })
+
+
+@main_bp.route('/api/rules/test', methods=['POST'])
+@login_required
+def api_rules_test():
+    """
+    测试采集规则
+    """
+    from app.deep_crawler import RuleBasedCrawler
+
+    data = request.get_json() or {}
+    rule_id = data.get('rule_id')
+    url = data.get('url', '').strip()
+
+    if not url:
+        return jsonify({'code': 1, 'msg': '请提供测试URL'})
+
+    # 获取规则
+    rule = None
+    if rule_id:
+        rule = CrawlRule.query.get(rule_id)
+
+    # 执行采集
+    crawler = RuleBasedCrawler(db)
+
+    if rule:
+        # 使用指定规则测试
+        result = crawler.deep_collect(url, source_name=rule.site_name)
+    else:
+        # 自动匹配规则
+        result = crawler.deep_collect(url)
+
+    if result['success']:
+        return jsonify({
+            'code': 0,
+            'msg': '采集成功',
+            'data': {
+                'title': result['title'],
+                'content': result['content'],
+                'publish_time': result['publish_time'],
+                'author': result['author'],
+                'rule_used': result['rule_used']
+            }
+        })
+    else:
+        return jsonify({
+            'code': 1,
+            'msg': result.get('error', '采集失败')
+        })
+
+
+@main_bp.route('/api/rules/add', methods=['POST'])
+@login_required
+def api_rules_add():
+    """
+    新增采集规则
+    """
+    import json
+    data = request.get_json() or {}
+
+    # 验证必填字段
+    site_name = data.get('site_name', '').strip()
+    site_domain = data.get('site_domain', '').strip()
+
+    if not site_name or not site_domain:
+        return jsonify({'code': 1, 'msg': '站点名称和域名不能为空'})
+
+    # 检查域名是否已存在
+    existing = CrawlRule.query.filter_by(site_domain=site_domain).first()
+    if existing:
+        return jsonify({'code': 1, 'msg': '该站点域名已存在规则'})
+
+    # 处理request_headers
+    headers_str = ''
+    headers_data = data.get('request_headers', '')
+    if headers_data:
+        if isinstance(headers_data, dict):
+            headers_str = json.dumps(headers_data, ensure_ascii=False)
+        else:
+            # 验证JSON格式
+            try:
+                json.loads(headers_data)
+                headers_str = headers_data
+            except:
+                return jsonify({'code': 1, 'msg': 'Request Headers必须是有效的JSON格式'})
+
+    # 处理适用来源
+    applicable_sources = data.get('applicable_sources', [])
+    sources_str = ''
+    if applicable_sources:
+        if isinstance(applicable_sources, list):
+            sources_str = json.dumps(applicable_sources, ensure_ascii=False)
+        elif isinstance(applicable_sources, str):
+            sources_str = applicable_sources
+
+    try:
+        rule = CrawlRule(
+            site_name=site_name,
+            site_domain=site_domain,
+            applicable_sources=sources_str,
+            title_xpath=data.get('title_xpath', '').strip(),
+            content_xpath=data.get('content_xpath', '').strip(),
+            request_headers=headers_str,
+            priority=int(data.get('priority', 0)),
+            status=data.get('status', 1),
+            description=data.get('description', '').strip()
+        )
+        db.session.add(rule)
+        db.session.commit()
+
+        return jsonify({'code': 0, 'msg': '添加成功', 'data': rule.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'添加失败: {str(e)}'})
+
+
+@main_bp.route('/api/rules/update', methods=['POST'])
+@login_required
+def api_rules_update():
+    """
+    更新采集规则
+    """
+    import json
+    data = request.get_json() or {}
+    rule_id = data.get('id')
+
+    if not rule_id:
+        return jsonify({'code': 1, 'msg': '缺少规则ID'})
+
+    rule = CrawlRule.query.get(rule_id)
+    if not rule:
+        return jsonify({'code': 1, 'msg': '规则不存在'})
+
+    try:
+        # 更新字段
+        if 'site_name' in data:
+            rule.site_name = data['site_name'].strip()
+        if 'site_domain' in data:
+            # 检查域名是否被其他规则使用
+            new_domain = data['site_domain'].strip()
+            existing = CrawlRule.query.filter(
+                CrawlRule.site_domain == new_domain,
+                CrawlRule.id != rule_id
+            ).first()
+            if existing:
+                return jsonify({'code': 1, 'msg': '该站点域名已被其他规则使用'})
+            rule.site_domain = new_domain
+        if 'applicable_sources' in data:
+            sources = data['applicable_sources']
+            if isinstance(sources, list):
+                rule.applicable_sources = json.dumps(sources, ensure_ascii=False)
+            elif isinstance(sources, str):
+                rule.applicable_sources = sources
+            else:
+                rule.applicable_sources = ''
+        if 'priority' in data:
+            rule.priority = int(data['priority'])
+        if 'title_xpath' in data:
+            rule.title_xpath = data['title_xpath'].strip()
+        if 'content_xpath' in data:
+            rule.content_xpath = data['content_xpath'].strip()
+        if 'request_headers' in data:
+            headers_data = data['request_headers']
+            if headers_data:
+                if isinstance(headers_data, dict):
+                    rule.request_headers = json.dumps(headers_data, ensure_ascii=False)
+                else:
+                    try:
+                        json.loads(headers_data)
+                        rule.request_headers = headers_data
+                    except:
+                        return jsonify({'code': 1, 'msg': 'Request Headers必须是有效的JSON格式'})
+            else:
+                rule.request_headers = ''
+        if 'status' in data:
+            rule.status = data['status']
+        if 'description' in data:
+            rule.description = data['description'].strip()
+
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': '更新成功', 'data': rule.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'更新失败: {str(e)}'})
+
+
+@main_bp.route('/api/rules/delete', methods=['POST'])
+@login_required
+def api_rules_delete():
+    """
+    删除采集规则
+    """
+    data = request.get_json() or {}
+    rule_id = data.get('id')
+
+    if not rule_id:
+        return jsonify({'code': 1, 'msg': '缺少规则ID'})
+
+    rule = CrawlRule.query.get(rule_id)
+    if not rule:
+        return jsonify({'code': 1, 'msg': '规则不存在'})
+
+    try:
+        db.session.delete(rule)
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': '删除成功'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'删除失败: {str(e)}'})
+
+
+@main_bp.route('/api/rules/delete-batch', methods=['POST'])
+@login_required
+def api_rules_delete_batch():
+    """
+    批量删除采集规则
+    """
+    data = request.get_json() or {}
+    ids = data.get('ids', [])
+
+    if not ids:
+        return jsonify({'code': 1, 'msg': '请选择要删除的规则'})
+
+    try:
+        deleted = CrawlRule.query.filter(CrawlRule.id.in_(ids)).delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': f'成功删除 {deleted} 条规则'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'删除失败: {str(e)}'})
+
+
+@main_bp.route('/api/rules/<int:rule_id>', methods=['GET'])
+@login_required
+def api_rules_detail(rule_id):
+    """
+    获取单条采集规则详情
+    """
+    rule = CrawlRule.query.get(rule_id)
+    if not rule:
+        return jsonify({'code': 1, 'msg': '规则不存在'})
+
+    return jsonify({'code': 0, 'data': rule.to_dict()})
+
+
+@main_bp.route('/api/rules/copy', methods=['POST'])
+@login_required
+def api_rules_copy():
+    """
+    复制采集规则
+    """
+    import json
+    data = request.get_json() or {}
+    rule_id = data.get('id')
+
+    if not rule_id:
+        return jsonify({'code': 1, 'msg': '缺少规则ID'})
+
+    # 获取原规则
+    source_rule = CrawlRule.query.get(rule_id)
+    if not source_rule:
+        return jsonify({'code': 1, 'msg': '原规则不存在'})
+
+    try:
+        # 生成新规则名称
+        base_name = source_rule.site_name
+        copy_count = 1
+        new_name = f"{base_name}_副本"
+        while CrawlRule.query.filter_by(site_name=new_name).first():
+            copy_count += 1
+            new_name = f"{base_name}_副本{copy_count}"
+
+        # 生成新域名（添加后缀避免重复）
+        new_domain = source_rule.site_domain
+        domain_count = 1
+        temp_domain = new_domain
+        while CrawlRule.query.filter_by(site_domain=temp_domain).first():
+            domain_count += 1
+            temp_domain = f"{new_domain}_{domain_count}"
+        new_domain = temp_domain
+
+        # 创建新规则
+        new_rule = CrawlRule(
+            site_name=new_name,
+            site_domain=new_domain,
+            applicable_sources=source_rule.applicable_sources,
+            title_xpath=source_rule.title_xpath,
+            content_xpath=source_rule.content_xpath,
+            request_headers=source_rule.request_headers,
+            priority=source_rule.priority,
+            status=0,  # 新复制的规则默认禁用
+            description=f"复制自: {source_rule.site_name}"
+        )
+
+        db.session.add(new_rule)
+        db.session.commit()
+
+        return jsonify({
+            'code': 0,
+            'msg': f'复制成功，新规则：{new_name}',
+            'data': new_rule.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'复制失败: {str(e)}'})
+
+
+@main_bp.route('/api/rules/by-source', methods=['GET'])
+@login_required
+def api_rules_by_source():
+    """
+    按来源获取匹配的规则列表
+
+    请求参数:
+        - source: 来源名称（如"百度新闻"）
+        - url: 目标URL（可选，用于域名匹配）
+
+    返回匹配的规则列表，按优先级排序
+    """
+    import json
+    from urllib.parse import urlparse
+
+    source = request.args.get('source', '').strip()
+    url = request.args.get('url', '').strip()
+
+    if not source and not url:
+        return jsonify({'code': 1, 'msg': '请提供来源名称或URL'})
+
+    # 获取所有启用的规则
+    rules = CrawlRule.query.filter_by(status=1).order_by(CrawlRule.priority.desc()).all()
+
+    matched_rules = []
+
+    # 提取URL域名用于匹配
+    url_domain = ''
+    url_domain_no_www = ''
+    if url:
+        try:
+            parsed = urlparse(url)
+            url_domain = parsed.netloc.lower()
+            url_domain_no_www = url_domain.replace('www.', '')
+        except:
+            pass
+
+    for rule in rules:
+        is_matched = False
+        match_reason = ''
+
+        # 1. 检查来源名称匹配（优先）
+        if source and rule.applicable_sources:
+            try:
+                sources_list = json.loads(rule.applicable_sources)
+                if source in sources_list:
+                    is_matched = True
+                    match_reason = '来源匹配'
+            except:
+                pass
+
+        # 2. 检查URL域名匹配
+        if url_domain and rule.site_domain:
+            # 清理规则中的域名
+            rule_domain = rule.site_domain.lower()
+            rule_domain = rule_domain.replace('https://', '').replace('http://', '').replace('www.', '')
+            rule_domain = rule_domain.split('/')[0].strip()
+
+            # 多种匹配方式
+            if (rule_domain == url_domain_no_www or
+                rule_domain == url_domain or
+                url_domain_no_www.endswith('.' + rule_domain) or
+                url_domain.endswith('.' + rule_domain) or
+                rule_domain in url_domain_no_www or
+                url_domain_no_www in rule_domain):
+                if is_matched:
+                    match_reason = '来源+域名匹配'
+                else:
+                    is_matched = True
+                    match_reason = '域名匹配'
+
+        if is_matched:
+            rule_dict = rule.to_dict()
+            rule_dict['match_reason'] = match_reason
+            matched_rules.append(rule_dict)
+
+    return jsonify({
+        'code': 0,
+        'data': matched_rules,
+        'count': len(matched_rules)
+    })
+
+
+@main_bp.route('/api/rules/<int:rule_id>/related-data', methods=['GET'])
+@login_required
+def api_rules_related_data(rule_id):
+    """
+    获取规则关联的数据统计
+
+    返回使用该规则采集的数据数量和列表
+    """
+    rule = CrawlRule.query.get(rule_id)
+    if not rule:
+        return jsonify({'code': 1, 'msg': '规则不存在'})
+
+    # 统计使用该规则的数据
+    usage_count = CollectedNews.query.filter_by(rule_id=rule_id).count()
+
+    # 统计通过规则名匹配的数据（兼容旧数据）
+    rule_name_count = CollectedNews.query.filter(
+        CollectedNews.rule_used == rule.site_name,
+        CollectedNews.rule_id.is_(None)
+    ).count()
+
+    total_count = usage_count + rule_name_count
+
+    return jsonify({
+        'code': 0,
+        'data': {
+            'rule_id': rule_id,
+            'rule_name': rule.site_name,
+            'usage_count': total_count,
+            'success_count': rule.success_count,
+            'fail_count': rule.fail_count
+        }
+    })
+
+
+@main_bp.route('/api/warehouse/source-stats', methods=['GET'])
+@login_required
+def api_warehouse_source_stats():
+    """
+    获取数据仓库来源统计（含匹配规则数）
+    使用与 api_rules_by_source 一致的匹配逻辑
+    """
+    import json
+    from sqlalchemy import func
+
+    # 获取所有来源及其数据量，同时获取一个示例URL用于域名匹配
+    source_stats = db.session.query(
+        CollectedNews.source,
+        func.count(CollectedNews.id).label('count')
+    ).group_by(CollectedNews.source).all()
+
+    # 获取每个来源的示例URL（用于域名匹配）
+    source_urls = {}
+    for source, _ in source_stats:
+        if source:
+            sample = CollectedNews.query.filter_by(source=source).first()
+            if sample and sample.url:
+                source_urls[source] = sample.url
+
+    # 获取所有启用的规则
+    rules = CrawlRule.query.filter_by(status=1).all()
+
+    result = []
+    for source, count in source_stats:
+        if not source:
+            continue
+
+        # 统计匹配该来源的规则数量（使用与api_rules_by_source一致的逻辑）
+        matched_rules = 0
+        sample_url = source_urls.get(source, '')
+
+        # 提取示例URL的域名
+        url_domain = ''
+        url_domain_no_www = ''
+        if sample_url:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(sample_url)
+                url_domain = parsed.netloc.lower()
+                url_domain_no_www = url_domain.replace('www.', '')
+            except:
+                pass
+
+        for rule in rules:
+            is_matched = False
+
+            # 1. 检查来源名称匹配
+            if rule.applicable_sources:
+                try:
+                    sources_list = json.loads(rule.applicable_sources)
+                    if source in sources_list:
+                        is_matched = True
+                except:
+                    pass
+
+            # 2. 检查URL域名匹配
+            if not is_matched and url_domain and rule.site_domain:
+                rule_domain = rule.site_domain.lower()
+                rule_domain = rule_domain.replace('https://', '').replace('http://', '').replace('www.', '')
+                rule_domain = rule_domain.split('/')[0].strip()
+
+                if (rule_domain == url_domain_no_www or
+                    rule_domain == url_domain or
+                    url_domain_no_www.endswith('.' + rule_domain) or
+                    url_domain.endswith('.' + rule_domain) or
+                    rule_domain in url_domain_no_www or
+                    url_domain_no_www in rule_domain):
+                    is_matched = True
+
+            if is_matched:
+                matched_rules += 1
+
+        result.append({
+            'source': source,
+            'data_count': count,
+            'matched_rules': matched_rules
+        })
+
+    return jsonify({
+        'code': 0,
+        'data': sorted(result, key=lambda x: x['data_count'], reverse=True)
+    })
+
+
+# ============ 深度采集API（基于规则库） ============
+
+@main_bp.route('/api/warehouse/deep-collect', methods=['POST'])
+@login_required
+def api_warehouse_deep_collect():
+    """
+    基于规则库的深度采集（单条）
+
+    请求参数:
+        - id: 数据ID
+        - rule_id: 指定规则ID（可选，单个）
+        - rule_ids: 指定规则ID列表（可选，多个，优先级依次尝试）
+    """
+    from app.deep_crawler import RuleBasedCrawler
+
+    data = request.get_json() or {}
+    news_id = data.get('id')
+    rule_id = data.get('rule_id')
+    rule_ids = data.get('rule_ids', [])
+
+    if not news_id:
+        return jsonify({'code': 1, 'msg': '缺少数据ID'})
+
+    # 获取数据
+    news = CollectedNews.query.get(news_id)
+    if not news:
+        return jsonify({'code': 1, 'msg': '数据不存在'})
+
+    if not news.url:
+        return jsonify({'code': 1, 'msg': '数据缺少URL，无法采集'})
+
+    # 处理规则ID列表
+    if rule_id and not rule_ids:
+        rule_ids = [rule_id]
+
+    crawler = RuleBasedCrawler(db)
+    result = None
+    tried_rules = []
+
+    if rule_ids:
+        # 依次尝试指定的规则
+        for rid in rule_ids:
+            rule = CrawlRule.query.get(rid)
+            if not rule:
+                continue
+            tried_rules.append(rule.site_name)
+            # 直接传入规则对象，让采集器使用这个规则
+            result = crawler.deep_collect(news.url, source_name=news.source, rule=rule)
+            if result['success']:
+                break
+    else:
+        # 自动匹配规则
+        result = crawler.deep_collect(news.url, news.source)
+
+    if result and result['success']:
+        # 更新数据库
+        try:
+            if result['title']:
+                news.title = result['title']
+            if result['content']:
+                news.content = result['content']
+            if result['publish_time']:
+                news.publish_time = result['publish_time']
+            if result['author']:
+                news.author = result['author']
+            news.deep_collected = True
+            news.deep_collected_at = datetime.now()
+            news.rule_used = result.get('rule_used', '通用规则')
+            news.rule_id = result.get('rule_id')
+
+            db.session.commit()
+
+            return jsonify({
+                'code': 0,
+                'msg': '采集成功',
+                'data': {
+                    'id': news.id,
+                    'title': news.title,
+                    'content': news.content[:200] + '...' if news.content and len(news.content) > 200 else news.content,
+                    'publish_time': news.publish_time,
+                    'author': news.author,
+                    'rule_used': result['rule_used'],
+                    'tried_rules': tried_rules
+                }
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'code': 1, 'msg': f'保存失败: {str(e)}'})
+    else:
+        error_msg = result.get('error', '采集失败') if result else '没有找到可用规则'
+        if tried_rules:
+            error_msg += f'（已尝试规则: {", ".join(tried_rules)}）'
+        return jsonify({'code': 1, 'msg': error_msg})
+
+
+@main_bp.route('/api/warehouse/deep-collect-batch', methods=['POST'])
+@login_required
+def api_warehouse_deep_collect_batch():
+    """
+    基于规则库的批量深度采集
+
+    请求参数:
+        - ids: 数据ID列表
+        - rule_id: 指定规则ID（可选，单个）
+        - rule_ids: 指定规则ID列表（可选，多个，优先级依次尝试）
+    """
+    from app.deep_crawler import RuleBasedCrawler
+    import time
+
+    data = request.get_json() or {}
+    ids = data.get('ids', [])
+    rule_id = data.get('rule_id')
+    rule_ids = data.get('rule_ids', [])
+
+    if not ids:
+        return jsonify({'code': 1, 'msg': '请选择要采集的数据'})
+
+    # 获取数据列表
+    news_list = CollectedNews.query.filter(CollectedNews.id.in_(ids)).all()
+    if not news_list:
+        return jsonify({'code': 1, 'msg': '未找到要采集的数据'})
+
+    # 处理规则ID列表
+    if rule_id and not rule_ids:
+        rule_ids = [rule_id]
+
+    # 获取指定的规则列表
+    specified_rules = []
+    if rule_ids:
+        for rid in rule_ids:
+            rule = CrawlRule.query.get(rid)
+            if rule:
+                specified_rules.append(rule)
+
+    crawler = RuleBasedCrawler(db)
+
+    success_count = 0
+    failed_count = 0
+    results = []
+
+    for news in news_list:
+        if not news.url:
+            failed_count += 1
+            results.append({
+                'id': news.id,
+                'title': news.title,
+                'success': False,
+                'error': '缺少URL'
+            })
+            continue
+
+        try:
+            result = None
+            tried_rules = []
+
+            if specified_rules:
+                # 依次尝试指定的规则
+                for rule in specified_rules:
+                    tried_rules.append(rule.site_name)
+                    # 直接传入规则对象，让采集器使用这个规则
+                    result = crawler.deep_collect(news.url, source_name=news.source, rule=rule)
+                    if result['success']:
+                        break
+            else:
+                # 自动匹配规则
+                result = crawler.deep_collect(news.url, news.source)
+
+            if result and result['success']:
+                # 更新数据
+                if result['title']:
+                    news.title = result['title']
+                if result['content']:
+                    news.content = result['content']
+                if result['publish_time']:
+                    news.publish_time = result['publish_time']
+                if result['author']:
+                    news.author = result['author']
+                news.deep_collected = True
+                news.deep_collected_at = datetime.now()
+                news.rule_used = result.get('rule_used', '通用规则')
+                news.rule_id = result.get('rule_id')
+
+                success_count += 1
+                results.append({
+                    'id': news.id,
+                    'title': news.title,
+                    'success': True,
+                    'rule_used': result['rule_used'],
+                    'tried_rules': tried_rules
+                })
+            else:
+                failed_count += 1
+                error_msg = result.get('error', '采集失败') if result else '没有可用规则'
+                results.append({
+                    'id': news.id,
+                    'title': news.title,
+                    'success': False,
+                    'error': error_msg,
+                    'tried_rules': tried_rules
+                })
+
+            # 每次请求间隔，避免被封
+            time.sleep(0.3)
+
+        except Exception as e:
+            failed_count += 1
+            results.append({
+                'id': news.id,
+                'title': news.title,
+                'success': False,
+                'error': str(e)
+            })
+
+    # 提交所有更改
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'保存失败: {str(e)}'})
+
+    return jsonify({
+        'code': 0,
+        'msg': f'采集完成：成功 {success_count} 条，失败 {failed_count} 条',
+        'data': {
+            'success': success_count,
+            'failed': failed_count,
+            'details': results
+        }
+    })
+
+
+@main_bp.route('/api/warehouse/preview-collect', methods=['POST'])
+@login_required
+def api_warehouse_preview_collect():
+    """
+    预览采集结果（不保存）
+
+    请求参数:
+        - url: 目标URL
+        - source: 来源名称（可选）
+    """
+    from app.deep_crawler import RuleBasedCrawler
+
+    data = request.get_json() or {}
+    url = data.get('url', '').strip()
+    source = data.get('source', '').strip()
+
+    if not url:
+        return jsonify({'code': 1, 'msg': '请提供URL'})
+
+    crawler = RuleBasedCrawler(db)
+    result = crawler.deep_collect(url, source)
+
+    if result['success']:
+        return jsonify({
+            'code': 0,
+            'msg': '预览成功',
+            'data': {
+                'title': result['title'],
+                'content': result['content'],
+                'publish_time': result['publish_time'],
+                'author': result['author'],
+                'rule_used': result['rule_used'],
+                'rule_id': result['rule_id']
+            }
+        })
+    else:
+        return jsonify({
+            'code': 1,
+            'msg': result.get('error', '采集失败'),
+            'data': {
+                'rule_used': result.get('rule_used'),
+                'rule_id': result.get('rule_id')
+            }
+        })
+
+
+@main_bp.route('/api/warehouse/auto-collect', methods=['POST'])
+@login_required
+def api_warehouse_auto_collect():
+    """
+    一键自动采集API
+
+    自动查找所有未深度采集的数据，根据每条数据的URL和来源自动匹配规则进行采集。
+    相比前端判断，后端可以基于每条数据的实际URL进行更准确的规则匹配。
+
+    请求参数（可选）:
+        - limit: 最大采集数量，默认100，防止一次采集太多
+    """
+    from app.deep_crawler import RuleBasedCrawler
+    import time
+
+    data = request.get_json() or {}
+    limit = data.get('limit', 100)
+
+    # 获取所有未深度采集的数据
+    uncollected_news = CollectedNews.query.filter_by(deep_collected=False).limit(limit).all()
+
+    if not uncollected_news:
+        return jsonify({'code': 0, 'msg': '所有数据已完成深度采集', 'data': {'success': 0, 'failed': 0, 'skipped': 0}})
+
+    crawler = RuleBasedCrawler(db)
+
+    success_count = 0
+    failed_count = 0
+    skipped_count = 0  # 无匹配规则被跳过的数量
+    results = []
+
+    for news in uncollected_news:
+        if not news.url:
+            skipped_count += 1
+            results.append({
+                'id': news.id,
+                'title': news.title[:30] + '...' if len(news.title) > 30 else news.title,
+                'success': False,
+                'skipped': True,
+                'error': '缺少URL'
+            })
+            continue
+
+        try:
+            # 先检查是否有匹配的规则
+            matched = crawler.find_matching_rule(news.source, news.url)
+
+            if not matched:
+                # 无匹配规则，跳过
+                skipped_count += 1
+                results.append({
+                    'id': news.id,
+                    'title': news.title[:30] + '...' if len(news.title) > 30 else news.title,
+                    'success': False,
+                    'skipped': True,
+                    'error': '无匹配规则'
+                })
+                continue
+
+            # 有规则，执行采集
+            result = crawler.deep_collect(news.url, news.source)
+
+            if result and result['success']:
+                # 更新数据
+                if result['title']:
+                    news.title = result['title']
+                if result['content']:
+                    news.content = result['content']
+                if result['publish_time']:
+                    news.publish_time = result['publish_time']
+                if result['author']:
+                    news.author = result['author']
+                news.deep_collected = True
+                news.deep_collected_at = datetime.now()
+                news.rule_used = result.get('rule_used', '通用规则')
+                news.rule_id = result.get('rule_id')
+
+                success_count += 1
+                results.append({
+                    'id': news.id,
+                    'title': news.title[:30] + '...' if len(news.title) > 30 else news.title,
+                    'success': True,
+                    'rule_used': result['rule_used']
+                })
+            else:
+                failed_count += 1
+                results.append({
+                    'id': news.id,
+                    'title': news.title[:30] + '...' if len(news.title) > 30 else news.title,
+                    'success': False,
+                    'error': result.get('error', '采集失败') if result else '采集失败'
+                })
+
+            # 每次请求间隔，避免被封
+            time.sleep(0.3)
+
+        except Exception as e:
+            failed_count += 1
+            results.append({
+                'id': news.id,
+                'title': news.title[:30] + '...' if len(news.title) > 30 else news.title,
+                'success': False,
+                'error': str(e)[:50]
+            })
+
+    # 提交所有更改
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'保存失败: {str(e)}'})
+
+    return jsonify({
+        'code': 0,
+        'msg': f'自动采集完成：成功 {success_count} 条，失败 {failed_count} 条，跳过 {skipped_count} 条',
+        'data': {
+            'success': success_count,
+            'failed': failed_count,
+            'skipped': skipped_count,
+            'total': len(uncollected_news),
+            'details': results[:50]  # 只返回前50条详情，避免响应过大
+        }
+    })
+
+
+# ============ AI引擎管理 ============
+
+@main_bp.route('/admin/ai-engines')
+@login_required
+def ai_engines():
+    """AI引擎管理页面"""
+    return render_template('admin/ai_engines.html')
+
+
+@main_bp.route('/api/ai-engines/list', methods=['GET'])
+@login_required
+def api_ai_engines_list():
+    """获取AI引擎列表"""
+    engines = AIEngine.query.order_by(AIEngine.is_default.desc(), AIEngine.created_at.desc()).all()
+    return jsonify({
+        'code': 0,
+        'data': [e.to_dict() for e in engines]
+    })
+
+
+@main_bp.route('/api/ai-engines/<int:engine_id>', methods=['GET'])
+@login_required
+def api_ai_engine_detail(engine_id):
+    """获取单个AI引擎详情（包含完整密钥）"""
+    engine = AIEngine.query.get(engine_id)
+    if not engine:
+        return jsonify({'code': 1, 'msg': '引擎不存在'})
+
+    return jsonify({
+        'code': 0,
+        'data': engine.to_dict(hide_key=False)
+    })
+
+
+@main_bp.route('/api/ai-engines/add', methods=['POST'])
+@login_required
+def api_ai_engines_add():
+    """新增AI引擎"""
+    data = request.get_json() or {}
+
+    # 验证必填字段
+    required = ['name', 'provider', 'api_url', 'api_key', 'model_name']
+    for field in required:
+        if not data.get(field, '').strip():
+            return jsonify({'code': 1, 'msg': f'{field}不能为空'})
+
+    try:
+        engine = AIEngine(
+            name=data['name'].strip(),
+            provider=data['provider'].strip(),
+            api_url=data['api_url'].strip(),
+            api_key=data['api_key'].strip(),
+            model_name=data['model_name'].strip(),
+            description=data.get('description', '').strip(),
+            icon=data.get('icon', 'layui-icon-auz'),
+            color=data.get('color', '#667eea'),
+            status=int(data.get('status', 1)),
+            max_tokens=int(data.get('max_tokens', 4096)),
+            temperature=float(data.get('temperature', 0.7))
+        )
+
+        # 如果是第一个引擎，设为默认
+        if AIEngine.query.count() == 0:
+            engine.is_default = True
+
+        db.session.add(engine)
+        db.session.commit()
+
+        return jsonify({'code': 0, 'msg': '添加成功', 'data': engine.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'添加失败: {str(e)}'})
+
+
+@main_bp.route('/api/ai-engines/update', methods=['POST'])
+@login_required
+def api_ai_engines_update():
+    """更新AI引擎"""
+    data = request.get_json() or {}
+    engine_id = data.get('id')
+
+    if not engine_id:
+        return jsonify({'code': 1, 'msg': '缺少引擎ID'})
+
+    engine = AIEngine.query.get(engine_id)
+    if not engine:
+        return jsonify({'code': 1, 'msg': '引擎不存在'})
+
+    try:
+        if 'name' in data:
+            engine.name = data['name'].strip()
+        if 'provider' in data:
+            engine.provider = data['provider'].strip()
+        if 'api_url' in data:
+            engine.api_url = data['api_url'].strip()
+        if 'api_key' in data and data['api_key'].strip():
+            engine.api_key = data['api_key'].strip()
+        if 'model_name' in data:
+            engine.model_name = data['model_name'].strip()
+        if 'description' in data:
+            engine.description = data['description'].strip()
+        if 'icon' in data:
+            engine.icon = data['icon']
+        if 'color' in data:
+            engine.color = data['color']
+        if 'status' in data:
+            engine.status = int(data['status'])
+        if 'max_tokens' in data:
+            engine.max_tokens = int(data['max_tokens'])
+        if 'temperature' in data:
+            engine.temperature = float(data['temperature'])
+
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': '更新成功', 'data': engine.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'更新失败: {str(e)}'})
+
+
+@main_bp.route('/api/ai-engines/delete', methods=['POST'])
+@login_required
+def api_ai_engines_delete():
+    """删除AI引擎"""
+    data = request.get_json() or {}
+    engine_id = data.get('id')
+
+    if not engine_id:
+        return jsonify({'code': 1, 'msg': '缺少引擎ID'})
+
+    engine = AIEngine.query.get(engine_id)
+    if not engine:
+        return jsonify({'code': 1, 'msg': '引擎不存在'})
+
+    try:
+        was_default = engine.is_default
+        db.session.delete(engine)
+        db.session.commit()
+
+        # 如果删除的是默认引擎，将第一个引擎设为默认
+        if was_default:
+            first_engine = AIEngine.query.first()
+            if first_engine:
+                first_engine.is_default = True
+                db.session.commit()
+
+        return jsonify({'code': 0, 'msg': '删除成功'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'删除失败: {str(e)}'})
+
+
+@main_bp.route('/api/ai-engines/set-default', methods=['POST'])
+@login_required
+def api_ai_engines_set_default():
+    """设置默认引擎"""
+    data = request.get_json() or {}
+    engine_id = data.get('id')
+
+    if not engine_id:
+        return jsonify({'code': 1, 'msg': '缺少引擎ID'})
+
+    engine = AIEngine.query.get(engine_id)
+    if not engine:
+        return jsonify({'code': 1, 'msg': '引擎不存在'})
+
+    try:
+        # 取消其他默认
+        AIEngine.query.update({AIEngine.is_default: False})
+        # 设置新默认
+        engine.is_default = True
+        db.session.commit()
+
+        return jsonify({'code': 0, 'msg': '设置成功'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'设置失败: {str(e)}'})
+
+
+@main_bp.route('/api/ai-engines/test', methods=['POST'])
+@login_required
+def api_ai_engines_test():
+    """测试AI引擎连接"""
+    import requests
+    import time
+
+    data = request.get_json() or {}
+    engine_id = data.get('id')
+
+    if not engine_id:
+        return jsonify({'code': 1, 'msg': '缺少引擎ID'})
+
+    engine = AIEngine.query.get(engine_id)
+    if not engine:
+        return jsonify({'code': 1, 'msg': '引擎不存在'})
+
+    # 构建测试请求
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {engine.api_key}'
+    }
+
+    payload = {
+        'model': engine.model_name,
+        'messages': [
+            {'role': 'user', 'content': '你好，请简短回复，测试连接是否正常。'}
+        ],
+        'max_tokens': 50,
+        'temperature': 0.7
+    }
+
+    try:
+        start_time = time.time()
+        response = requests.post(
+            engine.api_url,
+            headers=headers,
+            json=payload,
+            timeout=60,
+            verify=True  # SSL验证
+        )
+        end_time = time.time()
+        response_time = f'{(end_time - start_time) * 1000:.0f}ms'
+
+        if response.status_code == 200:
+            result = response.json()
+            reply = ''
+            if 'choices' in result and len(result['choices']) > 0:
+                choice = result['choices'][0]
+                if 'message' in choice:
+                    reply = choice['message'].get('content', '')
+                elif 'text' in choice:
+                    reply = choice['text']
+
+            return jsonify({
+                'code': 0,
+                'msg': '连接成功',
+                'data': {
+                    'response_time': response_time,
+                    'model': result.get('model', engine.model_name),
+                    'reply': reply
+                }
+            })
+        else:
+            error_msg = f'HTTP {response.status_code}'
+            error_detail = ''
+            try:
+                error_data = response.json()
+                if 'error' in error_data:
+                    error_obj = error_data['error']
+                    if isinstance(error_obj, dict):
+                        error_msg = error_obj.get('message', error_msg)
+                        error_detail = error_obj.get('type', '')
+                    else:
+                        error_msg = str(error_obj)
+                elif 'message' in error_data:
+                    error_msg = error_data['message']
+            except:
+                error_msg = f'HTTP {response.status_code}: {response.text[:200]}'
+
+            full_msg = f'{error_msg}' + (f' ({error_detail})' if error_detail else '')
+            return jsonify({'code': 1, 'msg': full_msg})
+
+    except requests.Timeout:
+        return jsonify({'code': 1, 'msg': '请求超时(60秒)，请检查API地址和网络连接'})
+    except requests.exceptions.SSLError as e:
+        return jsonify({'code': 1, 'msg': f'SSL证书错误: {str(e)[:100]}'})
+    except requests.exceptions.ConnectionError as e:
+        return jsonify({'code': 1, 'msg': f'连接失败，请检查API地址是否正确: {str(e)[:100]}'})
+    except requests.RequestException as e:
+        return jsonify({'code': 1, 'msg': f'网络错误: {str(e)[:100]}'})
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'测试失败: {str(e)[:100]}'})
+
+
+# ============ 爬虫管理 ============
+
+@main_bp.route('/admin/crawlers')
+@login_required
+def crawlers():
+    """爬虫管理页面"""
+    return render_template('admin/crawlers.html')
+
+
+@main_bp.route('/api/crawlers/list', methods=['GET'])
+@login_required
+def api_crawlers_list():
+    """获取爬虫列表"""
+    from app.models import CrawlerConfig
+    crawlers = CrawlerConfig.query.order_by(CrawlerConfig.sort_order.asc(), CrawlerConfig.created_at.asc()).all()
+    return jsonify({
+        'code': 0,
+        'data': [c.to_dict() for c in crawlers]
+    })
+
+
+@main_bp.route('/api/crawlers/active', methods=['GET'])
+@login_required
+def api_crawlers_active():
+    """获取启用的爬虫列表（用于数据采集页面）"""
+    from app.models import CrawlerConfig
+    crawlers = CrawlerConfig.query.filter_by(status=1).order_by(CrawlerConfig.sort_order.asc()).all()
+    return jsonify({
+        'code': 0,
+        'data': [{'code': c.code, 'name': c.name, 'icon': c.icon, 'color': c.color} for c in crawlers]
+    })
+
+
+@main_bp.route('/api/crawlers/<int:crawler_id>', methods=['GET'])
+@login_required
+def api_crawler_detail(crawler_id):
+    """获取单个爬虫详情"""
+    from app.models import CrawlerConfig
+    crawler = CrawlerConfig.query.get(crawler_id)
+    if not crawler:
+        return jsonify({'code': 1, 'msg': '爬虫不存在'})
+
+    return jsonify({
+        'code': 0,
+        'data': crawler.to_dict()
+    })
+
+
+@main_bp.route('/api/crawlers/add', methods=['POST'])
+@login_required
+def api_crawlers_add():
+    """新增爬虫"""
+    from app.models import CrawlerConfig
+
+    data = request.get_json() or {}
+
+    # 验证必填字段
+    required = ['name', 'code']
+    for field in required:
+        if not data.get(field, '').strip():
+            return jsonify({'code': 1, 'msg': f'{field}不能为空'})
+
+    # 检查code是否已存在
+    if CrawlerConfig.query.filter_by(code=data['code'].strip()).first():
+        return jsonify({'code': 1, 'msg': '爬虫代码已存在'})
+
+    try:
+        crawler = CrawlerConfig(
+            name=data['name'].strip(),
+            code=data['code'].strip(),
+            description=data.get('description', '').strip(),
+            icon=data.get('icon', 'layui-icon-website'),
+            color=data.get('color', '#667eea'),
+            base_url=data.get('base_url', '').strip(),
+            search_url=data.get('search_url', '').strip(),
+            crawler_class=data.get('crawler_class', '').strip(),
+            crawler_module=data.get('crawler_module', '').strip(),
+            default_headers=data.get('default_headers', '').strip(),
+            request_delay=float(data.get('request_delay', 0.5)),
+            timeout=int(data.get('timeout', 15)),
+            max_pages=int(data.get('max_pages', 10)),
+            status=int(data.get('status', 1)),
+            is_builtin=False,
+            sort_order=int(data.get('sort_order', 0))
+        )
+
+        db.session.add(crawler)
+        db.session.commit()
+
+        return jsonify({'code': 0, 'msg': '添加成功', 'data': crawler.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'添加失败: {str(e)}'})
+
+
+@main_bp.route('/api/crawlers/update', methods=['POST'])
+@login_required
+def api_crawlers_update():
+    """更新爬虫"""
+    from app.models import CrawlerConfig
+
+    data = request.get_json() or {}
+    crawler_id = data.get('id')
+
+    if not crawler_id:
+        return jsonify({'code': 1, 'msg': '缺少爬虫ID'})
+
+    crawler = CrawlerConfig.query.get(crawler_id)
+    if not crawler:
+        return jsonify({'code': 1, 'msg': '爬虫不存在'})
+
+    try:
+        if 'name' in data:
+            crawler.name = data['name'].strip()
+        if 'code' in data and data['code'].strip() != crawler.code:
+            # 检查新code是否已存在
+            if CrawlerConfig.query.filter(CrawlerConfig.code == data['code'].strip(), CrawlerConfig.id != crawler_id).first():
+                return jsonify({'code': 1, 'msg': '爬虫代码已存在'})
+            crawler.code = data['code'].strip()
+        if 'description' in data:
+            crawler.description = data['description'].strip()
+        if 'icon' in data:
+            crawler.icon = data['icon']
+        if 'color' in data:
+            crawler.color = data['color']
+        if 'base_url' in data:
+            crawler.base_url = data['base_url'].strip()
+        if 'search_url' in data:
+            crawler.search_url = data['search_url'].strip()
+        if 'crawler_class' in data:
+            crawler.crawler_class = data['crawler_class'].strip()
+        if 'crawler_module' in data:
+            crawler.crawler_module = data['crawler_module'].strip()
+        if 'default_headers' in data:
+            crawler.default_headers = data['default_headers'].strip()
+        if 'request_delay' in data:
+            crawler.request_delay = float(data['request_delay'])
+        if 'timeout' in data:
+            crawler.timeout = int(data['timeout'])
+        if 'max_pages' in data:
+            crawler.max_pages = int(data['max_pages'])
+        if 'status' in data:
+            crawler.status = int(data['status'])
+        if 'sort_order' in data:
+            crawler.sort_order = int(data['sort_order'])
+
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': '更新成功', 'data': crawler.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'更新失败: {str(e)}'})
+
+
+@main_bp.route('/api/crawlers/delete', methods=['POST'])
+@login_required
+def api_crawlers_delete():
+    """删除爬虫"""
+    from app.models import CrawlerConfig
+
+    data = request.get_json() or {}
+    crawler_id = data.get('id')
+
+    if not crawler_id:
+        return jsonify({'code': 1, 'msg': '缺少爬虫ID'})
+
+    crawler = CrawlerConfig.query.get(crawler_id)
+    if not crawler:
+        return jsonify({'code': 1, 'msg': '爬虫不存在'})
+
+    if crawler.is_builtin:
+        return jsonify({'code': 1, 'msg': '内置爬虫不能删除'})
+
+    try:
+        db.session.delete(crawler)
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': '删除成功'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'删除失败: {str(e)}'})
+
+
+@main_bp.route('/api/crawlers/toggle-status', methods=['POST'])
+@login_required
+def api_crawlers_toggle_status():
+    """切换爬虫状态"""
+    from app.models import CrawlerConfig
+
+    data = request.get_json() or {}
+    crawler_id = data.get('id')
+
+    if not crawler_id:
+        return jsonify({'code': 1, 'msg': '缺少爬虫ID'})
+
+    crawler = CrawlerConfig.query.get(crawler_id)
+    if not crawler:
+        return jsonify({'code': 1, 'msg': '爬虫不存在'})
+
+    try:
+        crawler.status = 0 if crawler.status == 1 else 1
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': '状态已更新', 'data': {'status': crawler.status}})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'更新失败: {str(e)}'})
+
+
+@main_bp.route('/api/crawlers/test', methods=['POST'])
+@login_required
+def api_crawlers_test():
+    """测试爬虫"""
+    from app.models import CrawlerConfig
+    import importlib
+
+    data = request.get_json() or {}
+    crawler_id = data.get('id')
+    keyword = data.get('keyword', '测试')
+
+    if not crawler_id:
+        return jsonify({'code': 1, 'msg': '缺少爬虫ID'})
+
+    crawler = CrawlerConfig.query.get(crawler_id)
+    if not crawler:
+        return jsonify({'code': 1, 'msg': '爬虫不存在'})
+
+    try:
+        # 动态加载爬虫模块
+        if crawler.crawler_module and crawler.crawler_class:
+            module = importlib.import_module(crawler.crawler_module)
+            crawler_cls = getattr(module, crawler.crawler_class)
+            crawler_instance = crawler_cls()
+
+            # 测试采集
+            results = crawler_instance.search(keyword, page=1)
+
+            # 更新统计
+            if results:
+                crawler.success_count = (crawler.success_count or 0) + 1
+            else:
+                crawler.fail_count = (crawler.fail_count or 0) + 1
+            crawler.last_used_at = datetime.now()
+            db.session.commit()
+
+            return jsonify({
+                'code': 0,
+                'msg': f'测试成功，获取到 {len(results)} 条数据',
+                'data': {
+                    'count': len(results),
+                    'sample': results[0] if results else None
+                }
+            })
+        else:
+            return jsonify({'code': 1, 'msg': '爬虫未配置模块和类名'})
+    except Exception as e:
+        # 更新失败统计
+        crawler.fail_count = (crawler.fail_count or 0) + 1
+        db.session.commit()
+        return jsonify({'code': 1, 'msg': f'测试失败: {str(e)}'})
+
+
+@main_bp.route('/api/crawlers/init-builtin', methods=['POST'])
+@login_required
+def api_crawlers_init_builtin():
+    """初始化内置爬虫"""
+    from app.models import CrawlerConfig
+
+    builtin_crawlers = [
+        {
+            'name': '百度新闻',
+            'code': 'baidu',
+            'description': '从百度新闻搜索采集新闻数据',
+            'icon': 'layui-icon-read',
+            'color': '#2932e1',
+            'base_url': 'https://www.baidu.com',
+            'search_url': 'https://www.baidu.com/s',
+            'crawler_class': 'BaiduNewsCrawler',
+            'crawler_module': 'app.crawler',
+            'request_delay': 0.5,
+            'timeout': 15,
+            'max_pages': 10,
+            'sort_order': 1
+        },
+        {
+            'name': '360新闻',
+            'code': '360kuai',
+            'description': '从360新闻搜索采集新闻数据',
+            'icon': 'layui-icon-website',
+            'color': '#00b050',
+            'base_url': 'https://www.so.com',
+            'search_url': 'https://news.so.com/ns',
+            'crawler_class': 'News360Crawler',
+            'crawler_module': 'app.crawler_360kuai',
+            'request_delay': 0.5,
+            'timeout': 15,
+            'max_pages': 5,
+            'sort_order': 2
+        }
+    ]
+
+    added = 0
+    for cfg in builtin_crawlers:
+        if not CrawlerConfig.query.filter_by(code=cfg['code']).first():
+            crawler = CrawlerConfig(
+                name=cfg['name'],
+                code=cfg['code'],
+                description=cfg['description'],
+                icon=cfg['icon'],
+                color=cfg['color'],
+                base_url=cfg['base_url'],
+                search_url=cfg['search_url'],
+                crawler_class=cfg['crawler_class'],
+                crawler_module=cfg['crawler_module'],
+                request_delay=cfg['request_delay'],
+                timeout=cfg['timeout'],
+                max_pages=cfg['max_pages'],
+                status=1,
+                is_builtin=True,
+                sort_order=cfg['sort_order']
+            )
+            db.session.add(crawler)
+            added += 1
+
+    if added > 0:
+        db.session.commit()
+        return jsonify({'code': 0, 'msg': f'成功初始化 {added} 个内置爬虫'})
+    else:
+        return jsonify({'code': 0, 'msg': '内置爬虫已存在，无需初始化'})
+
+
+@main_bp.route('/api/ai/chat', methods=['POST'])
+@login_required
+def api_ai_chat():
+    """AI对话接口"""
+    import requests
+
+    data = request.get_json() or {}
+    message = data.get('message', '').strip()
+    engine_id = data.get('engine_id')
+    history = data.get('history', [])  # 对话历史
+
+    if not message:
+        return jsonify({'code': 1, 'msg': '请输入消息内容'})
+
+    # 获取指定引擎或默认引擎
+    if engine_id:
+        engine = AIEngine.query.get(engine_id)
+    else:
+        engine = AIEngine.query.filter_by(is_default=True, status=1).first()
+        if not engine:
+            engine = AIEngine.query.filter_by(status=1).first()
+
+    if not engine:
+        return jsonify({'code': 1, 'msg': '没有可用的AI引擎，请先配置AI引擎'})
+
+    if engine.status != 1:
+        return jsonify({'code': 1, 'msg': '该AI引擎已禁用'})
+
+    # 构建消息
+    messages = []
+    # 添加系统提示
+    messages.append({
+        'role': 'system',
+        'content': '你是一个智能舆情分析助手，专门帮助用户分析新闻、舆情信息，提供专业的见解和建议。请用简洁清晰的中文回复。'
+    })
+    # 添加历史对话
+    for h in history[-10:]:  # 最多保留10轮历史
+        messages.append({'role': h.get('role', 'user'), 'content': h.get('content', '')})
+    # 添加当前消息
+    messages.append({'role': 'user', 'content': message})
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {engine.api_key}'
+    }
+
+    payload = {
+        'model': engine.model_name,
+        'messages': messages,
+        'max_tokens': engine.max_tokens,
+        'temperature': engine.temperature
+    }
+
+    try:
+        response = requests.post(
+            engine.api_url,
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            reply = ''
+            if 'choices' in result and len(result['choices']) > 0:
+                choice = result['choices'][0]
+                if 'message' in choice:
+                    reply = choice['message'].get('content', '')
+                elif 'text' in choice:
+                    reply = choice['text']
+
+            return jsonify({
+                'code': 0,
+                'data': {
+                    'reply': reply,
+                    'engine': engine.name,
+                    'model': result.get('model', engine.model_name)
+                }
+            })
+        else:
+            error_msg = f'AI服务响应错误 (HTTP {response.status_code})'
+            try:
+                error_data = response.json()
+                if 'error' in error_data:
+                    error_obj = error_data['error']
+                    if isinstance(error_obj, dict):
+                        error_msg = error_obj.get('message', error_msg)
+                    else:
+                        error_msg = str(error_obj)
+            except:
+                pass
+            return jsonify({'code': 1, 'msg': error_msg})
+
+    except requests.Timeout:
+        return jsonify({'code': 1, 'msg': 'AI响应超时，请稍后重试'})
+    except requests.RequestException as e:
+        return jsonify({'code': 1, 'msg': f'网络错误: {str(e)[:100]}'})
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'请求失败: {str(e)[:100]}'})
+
+
+# ============ 设置 API ============
+
+@main_bp.route('/api/settings/dashboard-bg', methods=['GET'])
+@login_required
+def get_dashboard_bg():
+    """获取仪表盘背景设置"""
+    bg_url = SystemConfig.get_config('dashboard_bg_url', '')
+    return jsonify({
+        'code': 0,
+        'data': {'bg_url': bg_url}
+    })
+
+
+@main_bp.route('/api/settings/dashboard-bg', methods=['POST'])
+@login_required
+def set_dashboard_bg():
+    """设置仪表盘背景"""
+    data = request.get_json()
+    if data is None:
+        return jsonify({'code': 1, 'msg': '无效的请求数据'})
+
+    bg_url = data.get('bg_url', '')
+
+    try:
+        SystemConfig.set_config('dashboard_bg_url', bg_url)
+        return jsonify({'code': 0, 'msg': '设置成功'})
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'设置失败: {str(e)}'})
+
+
 

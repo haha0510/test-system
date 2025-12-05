@@ -1,0 +1,613 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}爬虫管理 - 政企智能舆情分析系统{% endblock %}
+
+{% block extra_css %}
+<style>
+.crawler-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    transition: all 0.3s ease;
+    border: 1px solid #eee;
+}
+.crawler-card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    transform: translateY(-2px);
+}
+.crawler-card.disabled {
+    opacity: 0.6;
+    background: #f9f9f9;
+}
+.crawler-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+.crawler-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+    font-size: 24px;
+    color: #fff;
+}
+.crawler-info {
+    flex: 1;
+}
+.crawler-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.crawler-name .badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+.badge-builtin {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+.badge-custom {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+.crawler-code {
+    font-size: 12px;
+    color: #888;
+    font-family: monospace;
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.crawler-desc {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+.crawler-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 15px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+.meta-item {
+    font-size: 12px;
+    color: #666;
+}
+.meta-item strong {
+    color: #333;
+}
+.crawler-stats {
+    display: flex;
+    gap: 20px;
+    padding: 12px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%);
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+.stat-item {
+    text-align: center;
+}
+.stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #667eea;
+}
+.stat-label {
+    font-size: 11px;
+    color: #888;
+}
+.crawler-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.crawler-actions .layui-btn {
+    margin: 0;
+}
+
+/* 添加按钮 */
+.add-crawler-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    padding: 12px 24px;
+    font-size: 14px;
+}
+.add-crawler-btn:hover {
+    background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+}
+
+/* 空状态 */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #888;
+}
+.empty-state i {
+    font-size: 60px;
+    color: #ddd;
+    margin-bottom: 15px;
+}
+
+/* 表单样式 */
+.form-group {
+    margin-bottom: 15px;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: #333;
+    font-weight: 500;
+}
+.form-group .tip {
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+}
+
+/* 颜色选择器 */
+.color-picker-wrap {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.color-option {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+}
+.color-option:hover, .color-option.active {
+    transform: scale(1.1);
+    border-color: #333;
+}
+
+/* 图标选择器 */
+.icon-picker-wrap {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.icon-option {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid #eee;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #666;
+    transition: all 0.2s;
+}
+.icon-option:hover, .icon-option.active {
+    border-color: #667eea;
+    color: #667eea;
+    background: #f0f2ff;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="layui-card">
+    <div class="layui-card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span><i class="layui-icon layui-icon-website" style="margin-right:8px;"></i>爬虫管理</span>
+        <div>
+            <button class="layui-btn layui-btn-sm layui-btn-normal" id="btnInitBuiltin">
+                <i class="layui-icon layui-icon-refresh"></i> 初始化内置爬虫
+            </button>
+            <button class="layui-btn layui-btn-sm add-crawler-btn" id="btnAddCrawler">
+                <i class="layui-icon layui-icon-add-1"></i> 新增爬虫
+            </button>
+        </div>
+    </div>
+    <div class="layui-card-body">
+        <div id="crawlerList">
+            <div class="empty-state">
+                <i class="layui-icon layui-icon-loading layui-anim layui-anim-rotate layui-anim-loop"></i>
+                <p>加载中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑表单模板 -->
+<script type="text/html" id="formTpl">
+{% raw %}
+<div style="padding: 20px;">
+    <form class="layui-form" lay-filter="crawlerForm">
+        <input type="hidden" name="id" value="{{d.id || ''}}">
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+            <div class="form-group">
+                <label>爬虫名称 <span style="color:#e53935;">*</span></label>
+                <input type="text" name="name" value="{{d.name || ''}}" class="layui-input" placeholder="如：百度新闻" required>
+            </div>
+            <div class="form-group">
+                <label>爬虫代码 <span style="color:#e53935;">*</span></label>
+                <input type="text" name="code" value="{{d.code || ''}}" class="layui-input" placeholder="如：baidu" required {{d.is_builtin ? 'disabled' : ''}}>
+                <div class="tip">唯一标识，用于系统内部调用</div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>描述</label>
+            <textarea name="description" class="layui-textarea" style="height:60px;" placeholder="爬虫功能描述">{{d.description || ''}}</textarea>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+            <div class="form-group">
+                <label>爬虫模块</label>
+                <input type="text" name="crawler_module" value="{{d.crawler_module || ''}}" class="layui-input" placeholder="如：app.crawler">
+                <div class="tip">Python模块路径</div>
+            </div>
+            <div class="form-group">
+                <label>爬虫类名</label>
+                <input type="text" name="crawler_class" value="{{d.crawler_class || ''}}" class="layui-input" placeholder="如：BaiduNewsCrawler">
+                <div class="tip">爬虫类的名称</div>
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+            <div class="form-group">
+                <label>基础URL</label>
+                <input type="text" name="base_url" value="{{d.base_url || ''}}" class="layui-input" placeholder="如：https://www.baidu.com">
+            </div>
+            <div class="form-group">
+                <label>搜索URL</label>
+                <input type="text" name="search_url" value="{{d.search_url || ''}}" class="layui-input" placeholder="如：https://www.baidu.com/s">
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;">
+            <div class="form-group">
+                <label>请求间隔(秒)</label>
+                <input type="number" name="request_delay" value="{{d.request_delay || 0.5}}" class="layui-input" step="0.1" min="0">
+            </div>
+            <div class="form-group">
+                <label>超时时间(秒)</label>
+                <input type="number" name="timeout" value="{{d.timeout || 15}}" class="layui-input" min="1">
+            </div>
+            <div class="form-group">
+                <label>最大翻页数</label>
+                <input type="number" name="max_pages" value="{{d.max_pages || 10}}" class="layui-input" min="1">
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+            <div class="form-group">
+                <label>图标</label>
+                <div class="icon-picker-wrap" id="iconPicker">
+                    <div class="icon-option {{d.icon == 'layui-icon-website' || !d.icon ? 'active' : ''}}" data-icon="layui-icon-website"><i class="layui-icon layui-icon-website"></i></div>
+                    <div class="icon-option {{d.icon == 'layui-icon-read' ? 'active' : ''}}" data-icon="layui-icon-read"><i class="layui-icon layui-icon-read"></i></div>
+                    <div class="icon-option {{d.icon == 'layui-icon-list' ? 'active' : ''}}" data-icon="layui-icon-list"><i class="layui-icon layui-icon-list"></i></div>
+                    <div class="icon-option {{d.icon == 'layui-icon-survey' ? 'active' : ''}}" data-icon="layui-icon-survey"><i class="layui-icon layui-icon-survey"></i></div>
+                    <div class="icon-option {{d.icon == 'layui-icon-template' ? 'active' : ''}}" data-icon="layui-icon-template"><i class="layui-icon layui-icon-template"></i></div>
+                    <div class="icon-option {{d.icon == 'layui-icon-file' ? 'active' : ''}}" data-icon="layui-icon-file"><i class="layui-icon layui-icon-file"></i></div>
+                </div>
+                <input type="hidden" name="icon" value="{{d.icon || 'layui-icon-website'}}">
+            </div>
+            <div class="form-group">
+                <label>主题色</label>
+                <div class="color-picker-wrap" id="colorPicker">
+                    <div class="color-option {{d.color == '#667eea' || !d.color ? 'active' : ''}}" data-color="#667eea" style="background:#667eea;"></div>
+                    <div class="color-option {{d.color == '#2932e1' ? 'active' : ''}}" data-color="#2932e1" style="background:#2932e1;"></div>
+                    <div class="color-option {{d.color == '#00b050' ? 'active' : ''}}" data-color="#00b050" style="background:#00b050;"></div>
+                    <div class="color-option {{d.color == '#e53935' ? 'active' : ''}}" data-color="#e53935" style="background:#e53935;"></div>
+                    <div class="color-option {{d.color == '#f57c00' ? 'active' : ''}}" data-color="#f57c00" style="background:#f57c00;"></div>
+                    <div class="color-option {{d.color == '#00bcd4' ? 'active' : ''}}" data-color="#00bcd4" style="background:#00bcd4;"></div>
+                    <div class="color-option {{d.color == '#9c27b0' ? 'active' : ''}}" data-color="#9c27b0" style="background:#9c27b0;"></div>
+                </div>
+                <input type="hidden" name="color" value="{{d.color || '#667eea'}}">
+            </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+            <div class="form-group">
+                <label>排序</label>
+                <input type="number" name="sort_order" value="{{d.sort_order || 0}}" class="layui-input" min="0">
+                <div class="tip">数值越小越靠前</div>
+            </div>
+            <div class="form-group">
+                <label>状态</label>
+                <select name="status" class="layui-input" style="height:38px;">
+                    <option value="1" {{d.status == 1 || d.status === undefined ? 'selected' : ''}}>启用</option>
+                    <option value="0" {{d.status == 0 ? 'selected' : ''}}>禁用</option>
+                </select>
+            </div>
+        </div>
+    </form>
+</div>
+{% endraw %}
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+layui.use(['layer', 'form', 'laytpl'], function(){
+    var layer = layui.layer;
+    var form = layui.form;
+    var laytpl = layui.laytpl;
+    var $ = layui.$;  // 引入jQuery
+
+    var crawlerData = [];
+
+    // 加载爬虫列表
+    function loadCrawlers() {
+        fetch('/api/crawlers/list').then(r => r.json()).then(function(res) {
+            if(res.code === 0) {
+                crawlerData = res.data;
+                renderCrawlers();
+            } else {
+                layer.msg(res.msg, {icon: 2});
+            }
+        }).catch(function() {
+            document.getElementById('crawlerList').innerHTML = '<div class="empty-state"><i class="layui-icon layui-icon-face-cry"></i><p>加载失败</p></div>';
+        });
+    }
+
+    // 渲染爬虫列表
+    function renderCrawlers() {
+        var container = document.getElementById('crawlerList');
+
+        if(crawlerData.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="layui-icon layui-icon-website"></i><p>暂无爬虫配置，点击"初始化内置爬虫"添加默认爬虫</p></div>';
+            return;
+        }
+
+        var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:20px;">';
+
+        crawlerData.forEach(function(crawler) {
+            html += `
+                <div class="crawler-card ${crawler.status == 0 ? 'disabled' : ''}">
+                    <div class="crawler-header">
+                        <div class="crawler-icon" style="background:${crawler.color};">
+                            <i class="layui-icon ${crawler.icon}"></i>
+                        </div>
+                        <div class="crawler-info">
+                            <div class="crawler-name">
+                                ${crawler.name}
+                                <span class="badge ${crawler.is_builtin ? 'badge-builtin' : 'badge-custom'}">${crawler.is_builtin ? '内置' : '自定义'}</span>
+                                ${crawler.status == 0 ? '<span class="badge" style="background:#ffebee;color:#e53935;">已禁用</span>' : ''}
+                            </div>
+                            <span class="crawler-code">${crawler.code}</span>
+                        </div>
+                    </div>
+                    <div class="crawler-desc">${crawler.description || '暂无描述'}</div>
+                    <div class="crawler-meta">
+                        <div class="meta-item"><strong>模块：</strong>${crawler.crawler_module || '-'}</div>
+                        <div class="meta-item"><strong>类名：</strong>${crawler.crawler_class || '-'}</div>
+                        <div class="meta-item"><strong>间隔：</strong>${crawler.request_delay}s</div>
+                        <div class="meta-item"><strong>超时：</strong>${crawler.timeout}s</div>
+                    </div>
+                    <div class="crawler-stats">
+                        <div class="stat-item">
+                            <div class="stat-value">${crawler.success_count || 0}</div>
+                            <div class="stat-label">成功次数</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" style="color:#e53935;">${crawler.fail_count || 0}</div>
+                            <div class="stat-label">失败次数</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" style="color:#43a047;">${crawler.success_rate}</div>
+                            <div class="stat-label">成功率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" style="font-size:12px;color:#666;">${crawler.last_used_at}</div>
+                            <div class="stat-label">最后使用</div>
+                        </div>
+                    </div>
+                    <div class="crawler-actions">
+                        <button class="layui-btn layui-btn-sm layui-btn-normal" onclick="testCrawler(${crawler.id})">
+                            <i class="layui-icon layui-icon-play"></i> 测试
+                        </button>
+                        <button class="layui-btn layui-btn-sm" onclick="editCrawler(${crawler.id})">
+                            <i class="layui-icon layui-icon-edit"></i> 编辑
+                        </button>
+                        <button class="layui-btn layui-btn-sm ${crawler.status == 1 ? 'layui-btn-warm' : 'layui-btn-normal'}" onclick="toggleStatus(${crawler.id})">
+                            <i class="layui-icon ${crawler.status == 1 ? 'layui-icon-pause' : 'layui-icon-play'}"></i> ${crawler.status == 1 ? '禁用' : '启用'}
+                        </button>
+                        ${!crawler.is_builtin ? `<button class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteCrawler(${crawler.id})">
+                            <i class="layui-icon layui-icon-delete"></i> 删除
+                        </button>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // 初始化内置爬虫
+    document.getElementById('btnInitBuiltin').onclick = function() {
+        layer.confirm('确定要初始化内置爬虫吗？', {icon: 3}, function(idx) {
+            layer.close(idx);
+            var loadIdx = layer.load(1);
+
+            fetch('/api/crawlers/init-builtin', {
+                method: 'POST'
+            }).then(r => r.json()).then(function(res) {
+                layer.close(loadIdx);
+                layer.msg(res.msg, {icon: res.code === 0 ? 1 : 2});
+                if(res.code === 0) loadCrawlers();
+            });
+        });
+    };
+
+    // 新增爬虫
+    document.getElementById('btnAddCrawler').onclick = function() {
+        openForm({});
+    };
+
+    // 打开表单
+    function openForm(data) {
+        var tpl = document.getElementById('formTpl').innerHTML;
+        laytpl(tpl).render(data, function(html) {
+            layer.open({
+                type: 1,
+                title: data.id ? '编辑爬虫' : '新增爬虫',
+                area: ['650px', '600px'],
+                content: html,
+                btn: ['保存', '取消'],
+                success: function(layero) {
+                    form.render();
+
+                    // 图标选择
+                    layero.find('.icon-option').on('click', function() {
+                        layero.find('.icon-option').removeClass('active');
+                        $(this).addClass('active');
+                        layero.find('input[name="icon"]').val($(this).data('icon'));
+                    });
+
+                    // 颜色选择
+                    layero.find('.color-option').on('click', function() {
+                        layero.find('.color-option').removeClass('active');
+                        $(this).addClass('active');
+                        layero.find('input[name="color"]').val($(this).data('color'));
+                    });
+                },
+                yes: function(index, layero) {
+                    var formData = {};
+                    layero.find('form').serializeArray().forEach(function(item) {
+                        formData[item.name] = item.value;
+                    });
+
+                    if(!formData.name || !formData.code) {
+                        layer.msg('请填写必填项', {icon: 0});
+                        return;
+                    }
+
+                    var url = formData.id ? '/api/crawlers/update' : '/api/crawlers/add';
+
+                    fetch(url, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(formData)
+                    }).then(r => r.json()).then(function(res) {
+                        if(res.code === 0) {
+                            layer.close(index);
+                            layer.msg(res.msg, {icon: 1});
+                            loadCrawlers();
+                        } else {
+                            layer.msg(res.msg, {icon: 2});
+                        }
+                    });
+                }
+            });
+        });
+    }
+
+    // 编辑爬虫
+    window.editCrawler = function(id) {
+        var crawler = crawlerData.find(c => c.id === id);
+        if(crawler) openForm(crawler);
+    };
+
+    // 测试爬虫
+    window.testCrawler = function(id) {
+        layer.prompt({
+            title: '输入测试关键词',
+            value: '新闻',
+            formType: 0
+        }, function(keyword, promptIdx) {
+            layer.close(promptIdx);
+            var loadIdx = layer.load(1, {shade: [0.3, '#000']});
+
+            fetch('/api/crawlers/test', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: id, keyword: keyword})
+            }).then(r => r.json()).then(function(res) {
+                layer.close(loadIdx);
+
+                if(res.code === 0) {
+                    var sample = res.data.sample;
+                    var html = '<div style="padding:15px;">';
+                    html += '<p style="color:#43a047;font-weight:600;margin-bottom:15px;"><i class="layui-icon layui-icon-ok-circle"></i> ' + res.msg + '</p>';
+                    if(sample) {
+                        html += '<div style="background:#f8f9fa;padding:12px;border-radius:8px;">';
+                        html += '<p style="font-weight:600;margin-bottom:8px;">' + (sample.title || '').substring(0, 50) + '...</p>';
+                        html += '<p style="font-size:12px;color:#666;">' + (sample.summary || '').substring(0, 100) + '...</p>';
+                        html += '<p style="font-size:11px;color:#888;margin-top:8px;">来源: ' + (sample.source || '-') + '</p>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+
+                    layer.open({
+                        type: 1,
+                        title: '测试结果',
+                        area: ['450px', 'auto'],
+                        content: html
+                    });
+                    loadCrawlers();
+                } else {
+                    layer.msg(res.msg, {icon: 2, time: 3000});
+                    loadCrawlers();
+                }
+            });
+        });
+    };
+
+    // 切换状态
+    window.toggleStatus = function(id) {
+        fetch('/api/crawlers/toggle-status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id})
+        }).then(r => r.json()).then(function(res) {
+            if(res.code === 0) {
+                layer.msg(res.msg, {icon: 1});
+                loadCrawlers();
+            } else {
+                layer.msg(res.msg, {icon: 2});
+            }
+        });
+    };
+
+    // 删除爬虫
+    window.deleteCrawler = function(id) {
+        layer.confirm('确定要删除该爬虫吗？', {icon: 3}, function(idx) {
+            layer.close(idx);
+
+            fetch('/api/crawlers/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: id})
+            }).then(r => r.json()).then(function(res) {
+                if(res.code === 0) {
+                    layer.msg(res.msg, {icon: 1});
+                    loadCrawlers();
+                } else {
+                    layer.msg(res.msg, {icon: 2});
+                }
+            });
+        });
+    };
+
+    // 初始化
+    loadCrawlers();
+});
+</script>
+{% endblock %}
