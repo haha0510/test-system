@@ -154,6 +154,7 @@ def api_login():
     db.session.commit()
 
     # 设置会话
+    session.permanent = True  # 使用配置中的会话过期时间
     session['user_id'] = user.id
     session['username'] = user.username
     session['role'] = user.role
@@ -401,10 +402,93 @@ def api_search_news():
         try:
             if 'crawler_config' in locals() and crawler_config:
                 crawler_config.fail_count = (crawler_config.fail_count or 0) + 1
+                crawler_config.last_error = str(e)
                 db.session.commit()
-        except:
-            pass
+        except Exception as db_err:
+            print(f"更新爬虫统计失败: {db_err}")
+
+        # 记录详细错误信息
+        import traceback
+        print(f"数据采集失败: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({'code': 1, 'msg': f'抓取失败: {str(e)}'})
+
+
+@main_bp.route('/api/data/dynamic-collect', methods=['GET'])
+@login_required
+def api_dynamic_collect():
+    """
+    使用动态爬虫进行数据采集
+    请求参数: keyword, crawler, count, timeout
+    """
+    from app.models import CrawlerConfig
+    from app.crawler_dynamic import DynamicCrawlerEngine
+
+    keyword = request.args.get('keyword', '').strip()
+    crawler_code = request.args.get('crawler', '').strip()
+
+    # 安全处理数值参数
+    try:
+        count = int(request.args.get('count', 30))
+        timeout = int(request.args.get('timeout', 15))
+    except ValueError:
+        return jsonify({'code': 1, 'msg': '参数格式错误'})
+
+    if not keyword:
+        return jsonify({'code': 1, 'msg': '请输入搜索关键词'})
+
+    if not crawler_code:
+        return jsonify({'code': 1, 'msg': '请选择采集源'})
+
+    try:
+        crawler_config = CrawlerConfig.query.filter_by(code=crawler_code).first()
+        if not crawler_config:
+            return jsonify({'code': 1, 'msg': '爬虫配置不存在'})
+
+        if crawler_config.status != 1:
+            return jsonify({'code': 1, 'msg': '爬虫已被禁用'})
+
+        print(f"动态采集: 爬虫={crawler_code}, 关键词={keyword}, 数量={count}")
+
+        engine = DynamicCrawlerEngine(crawler_config.to_dict())
+        results = engine.search_batch(keyword, count=count)
+
+        print(f"动态采集: 成功获取 {len(results)} 条数据")
+
+        # 更新爬虫统计
+        crawler_config.success_count = (crawler_config.success_count or 0) + 1
+        crawler_config.last_used_at = datetime.now()
+        crawler_config.last_error = None
+        db.session.commit()
+
+        # 返回数据
+        return jsonify({
+            'code': 0,
+            'msg': f'采集成功，获取到 {len(results)} 条数据',
+            'data': {
+                'keyword': keyword,
+                'source': crawler_config.name,
+                'count': len(results),
+                'list': results
+            }
+        })
+
+    except Exception as e:
+        # 更新失败统计
+        if 'crawler_config' in locals() and crawler_config:
+            try:
+                crawler_config.fail_count = (crawler_config.fail_count or 0) + 1
+                crawler_config.last_used_at = datetime.now()
+                crawler_config.last_error = str(e)
+                db.session.commit()
+            except Exception as db_err:
+                print(f"更新爬虫统计失败: {db_err}")
+
+        # 记录详细错误信息
+        import traceback
+        print(f"❌ 动态采集失败: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'code': 1, 'msg': f'采集失败: {str(e)}'})
 
 
 # ============ 数据采集管理API ============
@@ -432,6 +516,9 @@ def api_deep_collect():
             'data': result
         })
     except Exception as e:
+        import traceback
+        print(f"深度采集失败: {str(e)}")
+        print(traceback.format_exc())
         return jsonify({'code': 1, 'msg': f'深度采集失败: {str(e)}'})
 
 
@@ -789,17 +876,155 @@ def api_warehouse_delete_batch():
 @main_bp.route('/api/warehouse/ai-analyze', methods=['POST'])
 @login_required
 def api_warehouse_ai_analyze():
-    """
-    AI分析接口（预留）
-    """
+    """AI分析新闻数据 - SSE流式响应"""
+    import requests
+    import json
+    from flask import Response, stream_with_context
+    from app.models import AIEngine
+
     data = request.get_json() or {}
     news_ids = data.get('ids', [])
 
-    # TODO: 实现AI分析功能
-    return jsonify({
-        'code': 1,
-        'msg': 'AI分析功能即将上线，敬请期待...'
-    })
+    # 基本验证
+    if not news_ids:
+        return jsonify({'code': 1, 'msg': '请选择要分析的新闻'})
+
+    # 获取新闻数据
+    news_list = CollectedNews.query.filter(CollectedNews.id.in_(news_ids)).all()
+    if not news_list:
+        return jsonify({'code': 1, 'msg': '未找到选中的新闻'})
+
+    # 获取默认AI引擎
+    engine = AIEngine.query.filter_by(is_default=True, status=1).first()
+    if not engine:
+        engine = AIEngine.query.filter_by(status=1).first()
+
+    if not engine:
+        return jsonify({'code': 1, 'msg': '没有可用的AI引擎，请先配置AI引擎'})
+
+    # 构建分析内容
+    news_content = []
+    for i, news in enumerate(news_list, 1):
+        news_content.append(f"【新闻{i}】")
+        news_content.append(f"标题: {news.title}")
+        news_content.append(f"来源: {news.source}")
+        news_content.append(f"发布时间: {news.publish_time or '未知'}")
+        if news.summary:
+            news_content.append(f"摘要: {news.summary}")
+        news_content.append("")
+
+    content_text = "\n".join(news_content)
+
+    # 构建AI提示
+    prompt = f"""请对以下{len(news_list)}条新闻进行深度分析：
+
+{content_text}
+
+请从以下几个维度进行分析：
+1. **主题概括**: 这些新闻的共同主题和核心观点
+2. **趋势分析**: 反映出的行业或社会趋势
+3. **舆情态度**: 整体的舆论倾向（正面/中性/负面）
+4. **关键信息**: 提取最重要的事实和数据
+5. **影响评估**: 可能产生的影响和意义
+
+请用清晰的中文回复，使用Markdown格式。"""
+
+    messages = [
+        {'role': 'system', 'content': '你是一个专业的舆情分析师，擅长从多条新闻中提取关键信息、分析趋势和评估影响。'},
+        {'role': 'user', 'content': prompt}
+    ]
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {engine.api_key}'
+    }
+
+    payload = {
+        'model': engine.model_name,
+        'messages': messages,
+        'max_tokens': engine.max_tokens or 2000,
+        'temperature': engine.temperature or 0.7,
+        'stream': True  # 启用流式响应
+    }
+
+    def generate():
+        """SSE生成器函数"""
+        try:
+            # 发送开始事件
+            yield f"data: {json.dumps({'type': 'start', 'news_count': len(news_list), 'engine': engine.name}, ensure_ascii=False)}\n\n"
+
+            # 发起流式请求
+            response = requests.post(
+                engine.api_url,
+                headers=headers,
+                json=payload,
+                stream=True,
+                timeout=120
+            )
+
+            if response.status_code != 200:
+                # 错误处理
+                error_msg = f'AI服务响应错误 (HTTP {response.status_code})'
+                try:
+                    error_data = response.json()
+                    if 'error' in error_data:
+                        error_obj = error_data['error']
+                        if isinstance(error_obj, dict):
+                            error_msg = error_obj.get('message', error_msg)
+                        else:
+                            error_msg = str(error_obj)
+
+                    # 友好的错误提示
+                    error_msg_lower = error_msg.lower()
+                    if 'balance' in error_msg_lower or 'insufficient' in error_msg_lower or 'paid' in error_msg_lower:
+                        error_msg = 'API余额不足，请充值后再试。'
+                    elif 'api key' in error_msg_lower or 'authentication' in error_msg_lower:
+                        error_msg = 'API密钥无效，请检查AI引擎配置。'
+                    elif 'rate limit' in error_msg_lower:
+                        error_msg = 'API请求频繁，请稍后再试。'
+                except:
+                    pass
+                yield f"data: {json.dumps({'type': 'error', 'message': error_msg}, ensure_ascii=False)}\n\n"
+                return
+
+            # 处理流式响应
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode('utf-8')
+                    if line_str.startswith('data: '):
+                        chunk_data = line_str[6:]  # 移除 'data: ' 前缀
+
+                        if chunk_data == '[DONE]':
+                            # 发送完成事件
+                            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                            break
+
+                        try:
+                            chunk_json = json.loads(chunk_data)
+                            # 提取内容
+                            if 'choices' in chunk_json and len(chunk_json['choices']) > 0:
+                                delta = chunk_json['choices'][0].get('delta', {})
+                                content = delta.get('content', '')
+                                if content:
+                                    # 发送内容块
+                                    yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
+                        except json.JSONDecodeError:
+                            continue
+
+        except requests.Timeout:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'AI分析超时，请稍后重试'}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'发生错误: {str(e)}'}, ensure_ascii=False)}\n\n"
+
+    # 返回SSE响应
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 
 # ============ 采集规则库API ============
@@ -2337,6 +2562,148 @@ def api_crawlers_test():
         return jsonify({'code': 1, 'msg': f'测试失败: {str(e)}'})
 
 
+# ============ 智能爬虫分析API ============
+
+@main_bp.route('/api/crawlers/analyze', methods=['POST'])
+@login_required
+@admin_required
+def api_crawlers_analyze():
+    """智能分析爬虫配置"""
+    data = request.get_json() or {}
+    url = data.get('url', '').strip()
+    request_headers = data.get('request_headers', '[]').strip()
+    sample_html = data.get('sample_html', '').strip()
+
+    if not url:
+        return jsonify({'code': 1, 'msg': '请输入源地址'})
+
+    try:
+        from app.crawler_analyzer import CrawlerAnalyzer
+
+        analyzer = CrawlerAnalyzer()
+        result = analyzer.analyze(url=url, request_headers=request_headers, sample_html=sample_html)
+
+        return jsonify({
+            'code': 0,
+            'msg': f'分析完成，置信度: {result.get("confidence", 0)}%',
+            'data': result
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'分析失败: {str(e)}'})
+
+
+@main_bp.route('/api/crawlers/create-from-analysis', methods=['POST'])
+@login_required
+@admin_required
+def api_crawlers_create_from_analysis():
+    """从分析结果创建爬虫"""
+    from app.models import CrawlerConfig
+    import json
+
+    data = request.get_json() or {}
+
+    # 必填字段
+    name = data.get('name', '').strip()
+    code = data.get('code', '').strip()
+
+    if not name or not code:
+        return jsonify({'code': 1, 'msg': '名称和代码不能为空'})
+
+    # 检查code是否已存在
+    if CrawlerConfig.query.filter_by(code=code).first():
+        return jsonify({'code': 1, 'msg': '爬虫代码已存在'})
+
+    # 解析分析配置
+    try:
+        config = data.get('analyzed_config', {})
+        if isinstance(config, str):
+            config = json.loads(config)
+
+        # 创建爬虫配置
+        crawler = CrawlerConfig(
+            name=name,
+            code=code,
+            description=config.get('description', ''),
+            icon=config.get('icon', 'layui-icon-website'),
+            color=config.get('color', '#667eea'),
+            crawler_type=config.get('crawler_type', 'html_parser'),
+            base_url=config.get('base_url', ''),
+            search_url=config.get('search_url', ''),
+            request_method=config.get('request_method', 'GET'),
+            search_params_template=json.dumps(config.get('search_params_template', {}), ensure_ascii=False),
+            pagination_config=json.dumps(config.get('pagination_config', {}), ensure_ascii=False),
+            parse_config=json.dumps(config.get('parse_config', {}), ensure_ascii=False),
+            analyzed_config=json.dumps(config, ensure_ascii=False),
+            is_analyzed=True,
+            default_headers=json.dumps(config.get('default_headers', {}), ensure_ascii=False),
+            request_delay=float(config.get('request_delay', 0.5)),
+            timeout=int(config.get('timeout', 15)),
+            max_pages=int(config.get('max_pages', 10)),
+            page_size=int(config.get('page_size', 10)),
+            status=1,
+            is_builtin=False,
+            is_template=False
+        )
+
+        db.session.add(crawler)
+        db.session.commit()
+
+        return jsonify({'code': 0, 'msg': '创建成功', 'data': crawler.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'创建失败: {str(e)}'})
+
+
+@main_bp.route('/api/crawlers/test-dynamic', methods=['POST'])
+@login_required
+def api_crawlers_test_dynamic():
+    """测试动态爬虫"""
+    from app.models import CrawlerConfig
+    from app.crawler_dynamic import DynamicCrawlerEngine
+
+    data = request.get_json() or {}
+    crawler_id = data.get('id')
+    keyword = data.get('keyword', '测试')
+
+    if not crawler_id:
+        return jsonify({'code': 1, 'msg': '缺少爬虫ID'})
+
+    crawler = CrawlerConfig.query.get(crawler_id)
+    if not crawler:
+        return jsonify({'code': 1, 'msg': '爬虫不存在'})
+
+    try:
+        # 使用动态爬虫引擎测试
+        crawler_engine = DynamicCrawlerEngine(crawler.to_dict())
+        results = crawler_engine.search_batch(keyword, count=20)
+
+        # 更新统计
+        if results:
+            crawler.success_count = (crawler.success_count or 0) + 1
+        else:
+            crawler.fail_count = (crawler.fail_count or 0) + 1
+        crawler.last_used_at = datetime.now()
+        crawler.last_error = None
+        db.session.commit()
+
+        return jsonify({
+            'code': 0,
+            'msg': f'动态爬虫测试成功，获取到 {len(results)} 条数据',
+            'data': {
+                'count': len(results),
+                'sample': results[:5] if results else []
+            }
+        })
+    except Exception as e:
+        # 更新失败统计
+        crawler.fail_count = (crawler.fail_count or 0) + 1
+        crawler.last_used_at = datetime.now()
+        crawler.last_error = str(e)
+        db.session.commit()
+
+        return jsonify({'code': 1, 'msg': f'动态爬虫测试失败: {str(e)}'})
+
+
 @main_bp.route('/api/crawlers/init-builtin', methods=['POST'])
 @login_required
 def api_crawlers_init_builtin():
@@ -2373,6 +2740,51 @@ def api_crawlers_init_builtin():
             'timeout': 15,
             'max_pages': 5,
             'sort_order': 2
+        },
+        {
+            'name': '腾讯新闻',
+            'code': 'tencent',
+            'description': '从腾讯新闻搜索采集新闻数据',
+            'icon': 'layui-icon-templeate-1',
+            'color': '#ff6b00',
+            'base_url': 'https://new.qq.com',
+            'search_url': 'https://new.qq.com/search',
+            'crawler_class': 'TencentNewsCrawler',
+            'crawler_module': 'app.crawler_tencent',
+            'request_delay': 0.5,
+            'timeout': 15,
+            'max_pages': 5,
+            'sort_order': 3
+        },
+        {
+            'name': '网易新闻',
+            'code': 'netease',
+            'description': '从网易新闻搜索采集新闻数据',
+            'icon': 'layui-icon-app',
+            'color': '#d71a1a',
+            'base_url': 'https://news.163.com',
+            'search_url': 'https://search.news.163.com/search',
+            'crawler_class': 'NeteaseNewsCrawler',
+            'crawler_module': 'app.crawler_netease',
+            'request_delay': 0.5,
+            'timeout': 15,
+            'max_pages': 5,
+            'sort_order': 4
+        },
+        {
+            'name': '搜狐新闻',
+            'code': 'sohu',
+            'description': '从搜狐新闻搜索采集新闻数据',
+            'icon': 'layui-icon-survey',
+            'color': '#ff7a00',
+            'base_url': 'https://www.sohu.com',
+            'search_url': 'https://search.sohu.com/',
+            'crawler_class': 'SohuNewsCrawler',
+            'crawler_module': 'app.crawler_sohu',
+            'request_delay': 0.5,
+            'timeout': 15,
+            'max_pages': 5,
+            'sort_order': 5
         }
     ]
 
@@ -2467,6 +2879,9 @@ def api_ai_chat():
             timeout=120
         )
 
+        # 确保正确的编码
+        response.encoding = 'utf-8'
+
         if response.status_code == 200:
             result = response.json()
             reply = ''
@@ -2495,6 +2910,17 @@ def api_ai_chat():
                         error_msg = error_obj.get('message', error_msg)
                     else:
                         error_msg = str(error_obj)
+
+                # 友好的错误提示
+                error_msg_lower = error_msg.lower()
+                if 'balance' in error_msg_lower or 'insufficient' in error_msg_lower or 'paid' in error_msg_lower:
+                    error_msg = 'API余额不足，请充值后再试。如果您使用的是免费API，请切换到已充值的API密钥。'
+                elif 'api key' in error_msg_lower or 'authentication' in error_msg_lower or 'unauthorized' in error_msg_lower:
+                    error_msg = 'API密钥无效或未授权，请检查AI引擎配置中的API密钥是否正确。'
+                elif 'rate limit' in error_msg_lower or 'too many' in error_msg_lower:
+                    error_msg = 'API请求过于频繁，请稍后再试。'
+                elif 'model' in error_msg_lower and 'not found' in error_msg_lower:
+                    error_msg = '指定的模型不存在，请检查AI引擎配置中的模型名称。'
             except:
                 pass
             return jsonify({'code': 1, 'msg': error_msg})
@@ -2535,6 +2961,521 @@ def set_dashboard_bg():
         return jsonify({'code': 0, 'msg': '设置成功'})
     except Exception as e:
         return jsonify({'code': 1, 'msg': f'设置失败: {str(e)}'})
+
+
+@main_bp.route('/api/dashboard/stats', methods=['GET'])
+@login_required
+def api_dashboard_stats():
+    """获取仪表盘统计数据"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+
+    try:
+        # 数据总量
+        total_count = CollectedNews.query.count()
+
+        # 已深度采集数量（修复字段名）
+        deep_collected = CollectedNews.query.filter(CollectedNews.deep_collected == True).count()
+
+        # 今日新增（最近24小时）
+        today_start = datetime.now() - timedelta(hours=24)
+        today_count = CollectedNews.query.filter(CollectedNews.created_at >= today_start).count()
+
+        # 数据来源统计
+        sources_count = db.session.query(func.count(func.distinct(CollectedNews.source))).scalar()
+
+        # 最近采集的5条数据
+        recent_news = CollectedNews.query.order_by(CollectedNews.created_at.desc()).limit(5).all()
+
+        return jsonify({
+            'code': 0,
+            'data': {
+                'total_count': total_count,
+                'deep_collected': deep_collected,
+                'today_count': today_count,
+                'sources_count': sources_count or 0,
+                'recent_news': [news.to_dict() for news in recent_news]
+            }
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取统计数据失败: {str(e)}'})
+
+
+@main_bp.route('/api/dashboard/system-status', methods=['GET'])
+@login_required
+def api_dashboard_system_status():
+    """获取系统状态"""
+    from app.models import CrawlerConfig, AIEngine
+
+    try:
+        status_items = []
+
+        # 系统状态
+        status_items.append({
+            'label': '系统状态',
+            'status': 'success',
+            'text': '运行正常'
+        })
+
+        # 数据库连接
+        try:
+            db.session.execute('SELECT 1')
+            status_items.append({
+                'label': '数据库连接',
+                'status': 'success',
+                'text': '已连接'
+            })
+        except:
+            status_items.append({
+                'label': '数据库连接',
+                'status': 'error',
+                'text': '连接失败'
+            })
+
+        # 爬虫状态（检查启用的爬虫）
+        crawlers = CrawlerConfig.query.filter_by(status=1).all()
+        for crawler in crawlers[:3]:  # 只显示前3个
+            status_items.append({
+                'label': crawler.name,
+                'status': 'success',
+                'text': '可用'
+            })
+
+        # AI引擎状态
+        ai_engines = AIEngine.query.filter_by(status=1).count()
+        if ai_engines > 0:
+            status_items.append({
+                'label': f'AI引擎 ({ai_engines}个)',
+                'status': 'success',
+                'text': '已配置'
+            })
+        else:
+            status_items.append({
+                'label': 'AI引擎',
+                'status': 'warning',
+                'text': '未配置'
+            })
+
+        return jsonify({
+            'code': 0,
+            'data': [{'label': item['label'], 'status': item['status'], 'text': item['text']} for item in status_items]
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取系统状态失败: {str(e)}'})
+
+
+# ============ AI数据分析 ============
+
+@main_bp.route('/admin/ai-data-analysis')
+@login_required
+def ai_data_analysis():
+    """AI数据分析页面"""
+    return render_template('admin/ai_data_analysis.html')
+
+
+# AI数据分析工具定义
+AI_DATA_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_table_list",
+            "description": "获取数据库中所有表的列表，用于了解数据库有哪些数据表",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_table_schema",
+            "description": "获取指定表的结构信息，包括列名、数据类型、是否为主键等，以及表中的数据行数",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "table_name": {
+                        "type": "string",
+                        "description": "要查询的表名"
+                    }
+                },
+                "required": ["table_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_sql_query",
+            "description": "执行SQL查询语句（仅支持SELECT），用于查询和分析数据。注意：只能执行SELECT查询，不能执行增删改操作",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sql": {
+                        "type": "string",
+                        "description": "要执行的SQL SELECT语句"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "最大返回行数，默认100",
+                        "default": 100
+                    }
+                },
+                "required": ["sql"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_data_statistics",
+            "description": "获取表或指定列的统计信息，如行数、非空值数量、唯一值数量、最大最小值等",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "table_name": {
+                        "type": "string",
+                        "description": "要统计的表名"
+                    },
+                    "column_name": {
+                        "type": "string",
+                        "description": "要统计的列名（可选），如果不指定则只统计表的行数"
+                    }
+                },
+                "required": ["table_name"]
+            }
+        }
+    }
+]
+
+
+def get_database_path():
+    """获取数据库路径"""
+    import os
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'app.db')
+
+
+def tool_get_table_list():
+    """获取数据库中所有表的列表"""
+    import sqlite3
+    db_path = get_database_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    tables = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return {"tables": tables}
+
+
+def tool_get_table_schema(table_name: str):
+    """获取指定表的结构信息"""
+    import sqlite3
+    db_path = get_database_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # 检查表是否存在
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+    if not cursor.fetchone():
+        conn.close()
+        return {"error": f"表 '{table_name}' 不存在"}
+
+    # 获取表结构
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    columns = []
+    for row in cursor.fetchall():
+        columns.append({
+            "cid": row[0],
+            "name": row[1],
+            "type": row[2],
+            "notnull": row[3],
+            "default": row[4],
+            "pk": row[5]
+        })
+
+    # 获取行数
+    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+    row_count = cursor.fetchone()[0]
+
+    conn.close()
+    return {
+        "table_name": table_name,
+        "columns": columns,
+        "row_count": row_count
+    }
+
+
+def tool_execute_sql_query(sql: str, limit: int = 100):
+    """执行只读SQL查询"""
+    import sqlite3
+    db_path = get_database_path()
+
+    # 安全检查：只允许SELECT语句
+    sql_upper = sql.strip().upper()
+    if not sql_upper.startswith('SELECT'):
+        return {"error": "只允许执行SELECT查询语句，不支持增删改操作"}
+
+    # 禁止危险操作
+    dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
+    for keyword in dangerous_keywords:
+        if keyword in sql_upper:
+            return {"error": f"SQL语句包含不允许的操作: {keyword}"}
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # 添加LIMIT限制
+        if 'LIMIT' not in sql_upper:
+            sql = f"{sql.rstrip(';')} LIMIT {limit}"
+
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+
+        result = [dict(row) for row in rows]
+        column_names = [description[0] for description in cursor.description] if cursor.description else []
+
+        conn.close()
+        return {
+            "columns": column_names,
+            "data": result,
+            "row_count": len(result),
+            "sql": sql
+        }
+    except Exception as e:
+        return {"error": f"SQL执行错误: {str(e)}"}
+
+
+def tool_get_data_statistics(table_name: str, column_name: str = None):
+    """获取表或列的统计信息"""
+    import sqlite3
+    db_path = get_database_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # 检查表是否存在
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+    if not cursor.fetchone():
+        conn.close()
+        return {"error": f"表 '{table_name}' 不存在"}
+
+    stats = {"table_name": table_name}
+
+    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+    stats["total_rows"] = cursor.fetchone()[0]
+
+    if column_name:
+        try:
+            cursor.execute(f"SELECT COUNT({column_name}) FROM {table_name} WHERE {column_name} IS NOT NULL")
+            stats["non_null_count"] = cursor.fetchone()[0]
+
+            cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM {table_name}")
+            stats["distinct_count"] = cursor.fetchone()[0]
+
+            try:
+                cursor.execute(f"SELECT MIN({column_name}), MAX({column_name}), AVG({column_name}) FROM {table_name}")
+                row = cursor.fetchone()
+                stats["min"] = row[0]
+                stats["max"] = row[1]
+                stats["avg"] = row[2]
+            except:
+                pass
+        except Exception as e:
+            stats["column_error"] = str(e)
+
+    conn.close()
+    return stats
+
+
+def execute_ai_tool(tool_name: str, arguments: dict):
+    """执行AI工具调用"""
+    tool_functions = {
+        "get_table_list": tool_get_table_list,
+        "get_table_schema": tool_get_table_schema,
+        "execute_sql_query": tool_execute_sql_query,
+        "get_data_statistics": tool_get_data_statistics
+    }
+
+    if tool_name not in tool_functions:
+        return {"error": f"未知的工具: {tool_name}"}
+
+    try:
+        return tool_functions[tool_name](**arguments)
+    except Exception as e:
+        return {"error": f"工具执行失败: {str(e)}"}
+
+
+@main_bp.route('/api/ai-data-analysis/tables', methods=['GET'])
+@login_required
+def api_ai_data_tables():
+    """获取数据库表信息"""
+    result = tool_get_table_list()
+    tables_info = []
+
+    for table_name in result.get('tables', []):
+        schema = tool_get_table_schema(table_name)
+        tables_info.append({
+            'name': table_name,
+            'columns': len(schema.get('columns', [])),
+            'rows': schema.get('row_count', 0)
+        })
+
+    return jsonify({
+        'code': 0,
+        'data': tables_info
+    })
+
+
+@main_bp.route('/api/ai-data-analysis/chat', methods=['POST'])
+@login_required
+def api_ai_data_analysis_chat():
+    """AI数据分析对话接口（支持工具调用）"""
+    import requests as http_requests
+    import json
+
+    data = request.get_json() or {}
+    message = data.get('message', '').strip()
+    engine_id = data.get('engine_id')
+    history = data.get('history', [])
+
+    if not message:
+        return jsonify({'code': 1, 'msg': '请输入消息内容'})
+
+    # 获取AI引擎
+    if engine_id:
+        engine = AIEngine.query.get(engine_id)
+    else:
+        engine = AIEngine.query.filter_by(is_default=True, status=1).first()
+        if not engine:
+            engine = AIEngine.query.filter_by(status=1).first()
+
+    if not engine:
+        return jsonify({'code': 1, 'msg': '没有可用的AI引擎，请先配置AI引擎'})
+
+    if engine.status != 1:
+        return jsonify({'code': 1, 'msg': '该AI引擎已禁用'})
+
+    # 构建系统提示
+    system_prompt = """你是一个专业的数据分析助手，负责帮助用户分析和理解SQLite数据库中的数据。
+
+你有以下工具可以使用：
+1. get_table_list - 获取数据库中所有表的列表
+2. get_table_schema - 获取指定表的结构信息
+3. execute_sql_query - 执行SQL查询（仅支持SELECT）
+4. get_data_statistics - 获取表或列的统计信息
+
+请根据用户的问题，主动使用这些工具来获取信息，然后给出专业的分析结果。
+回复时请使用中文，格式清晰易读。对于数据分析结果，可以使用markdown表格来展示数据。"""
+
+    # 构建消息
+    messages = [{'role': 'system', 'content': system_prompt}]
+    for h in history[-10:]:
+        messages.append({'role': h.get('role', 'user'), 'content': h.get('content', '')})
+    messages.append({'role': 'user', 'content': message})
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {engine.api_key}'
+    }
+
+    # 工具调用循环
+    max_iterations = 10
+    tool_calls_log = []
+
+    for iteration in range(max_iterations):
+        payload = {
+            'model': engine.model_name,
+            'messages': messages,
+            'max_tokens': engine.max_tokens,
+            'temperature': 0.1,
+            'tools': AI_DATA_TOOLS,
+            'tool_choice': 'auto'
+        }
+
+        try:
+            response = http_requests.post(
+                engine.api_url,
+                headers=headers,
+                json=payload,
+                timeout=120
+            )
+
+            if response.status_code != 200:
+                error_msg = f'AI服务响应错误 (HTTP {response.status_code})'
+                try:
+                    error_data = response.json()
+                    if 'error' in error_data:
+                        error_obj = error_data['error']
+                        if isinstance(error_obj, dict):
+                            error_msg = error_obj.get('message', error_msg)
+                        else:
+                            error_msg = str(error_obj)
+                except:
+                    pass
+                return jsonify({'code': 1, 'msg': error_msg})
+
+            result = response.json()
+
+            if 'choices' not in result or len(result['choices']) == 0:
+                return jsonify({'code': 1, 'msg': 'AI返回格式错误'})
+
+            choice = result['choices'][0]
+            ai_message = choice.get('message', {})
+            tool_calls = ai_message.get('tool_calls', [])
+
+            if tool_calls:
+                # 有工具调用
+                messages.append(ai_message)
+
+                for tool_call in tool_calls:
+                    tool_id = tool_call.get('id', '')
+                    function = tool_call.get('function', {})
+                    tool_name = function.get('name', '')
+                    arguments_str = function.get('arguments', '{}')
+
+                    try:
+                        arguments = json.loads(arguments_str)
+                    except:
+                        arguments = {}
+
+                    # 执行工具
+                    tool_result = execute_ai_tool(tool_name, arguments)
+                    tool_calls_log.append({
+                        'tool': tool_name,
+                        'args': arguments,
+                        'result_preview': str(tool_result)[:200]
+                    })
+
+                    messages.append({
+                        'role': 'tool',
+                        'tool_call_id': tool_id,
+                        'content': json.dumps(tool_result, ensure_ascii=False)
+                    })
+
+                continue
+            else:
+                # 没有工具调用，返回最终回复
+                content = ai_message.get('content', '')
+                return jsonify({
+                    'code': 0,
+                    'data': {
+                        'reply': content,
+                        'engine': engine.name,
+                        'model': result.get('model', engine.model_name),
+                        'tool_calls': tool_calls_log
+                    }
+                })
+
+        except http_requests.Timeout:
+            return jsonify({'code': 1, 'msg': 'AI响应超时，请稍后重试'})
+        except http_requests.RequestException as e:
+            return jsonify({'code': 1, 'msg': f'网络错误: {str(e)[:100]}'})
+        except Exception as e:
+            return jsonify({'code': 1, 'msg': f'请求失败: {str(e)[:100]}'})
+
+    return jsonify({'code': 1, 'msg': '达到最大迭代次数'})
 
 
 

@@ -39,13 +39,14 @@ flask db upgrade                           # 应用迁移
 ### 核心结构
 ```
 app/
-├── __init__.py     # 应用工厂 (create_app)，初始化扩展和注册蓝图
-├── models.py       # 数据模型 (User, SystemConfig)
-├── routes.py       # 路由和API定义 (main_bp 蓝图)
-└── templates/      # Jinja2 模板
-    ├── base.html           # 基础模板
-    ├── login.html          # 登录页
-    └── admin/              # 后台管理页面
+├── __init__.py         # 应用工厂 (create_app)
+├── models.py           # 数据模型
+├── routes.py           # 路由和API定义 (main_bp 蓝图)
+├── crawler.py          # 百度新闻爬虫 (BaiduNewsCrawler)
+├── crawler_360kuai.py  # 360快资讯爬虫
+├── crawler_xinhua.py   # 新华网爬虫
+├── deep_crawler.py     # 深度采集模块 (RuleBasedCrawler)
+└── templates/admin/    # 后台管理页面
 ```
 
 ### 关键设计模式
@@ -64,6 +65,52 @@ app/
 |------|------|
 | User | 用户账户，支持密码加密、登录锁定、角色权限 |
 | SystemConfig | 键值对形式的系统配置存储 |
+| CrawlRule | 采集规则库，XPath 规则配置 |
+| CollectedNews | 采集的新闻数据 |
+| AIEngine | AI引擎配置（API地址、密钥、模型参数） |
+| CrawlerConfig | 爬虫配置，支持动态加载 |
+
+## 采集系统架构
+
+### 数据采集流程
+1. **数据采集** (`data_collect.html`): 从配置的爬虫源搜索新闻，保存到 CollectedNews
+2. **深度采集** (`deep_crawler.py`): 根据规则库获取新闻正文内容
+3. **数据仓库** (`data_warehouse.html`): 管理已采集的数据
+
+### 规则匹配优先级
+1. 用户指定的规则（手动选择）
+2. 数据库规则按适用来源匹配
+3. 数据库规则按域名匹配
+4. 内置规则 `BUILTIN_RULES`（针对常用新闻源）
+5. 通用解析 `_parse_generic`（自动提取正文）
+
+### 爬虫动态加载
+爬虫通过 `CrawlerConfig` 配置，使用 `importlib` 动态加载：
+```python
+module = importlib.import_module(crawler_config.crawler_module)
+crawler_cls = getattr(module, crawler_config.crawler_class)
+```
+
+## 前端开发注意事项
+
+### Jinja2 与 laytpl 模板语法冲突
+在 `<script type="text/html">` 模板中使用 laytpl 语法（`{{d.xxx}}`）时，必须用 `{% raw %}` 包裹：
+```html
+<script type="text/html" id="myTpl">
+{% raw %}
+<div>{{d.name}}</div>
+{% endraw %}
+</script>
+```
+
+### Layui jQuery 引用
+在 `layui.use` 回调中使用 jQuery 需要显式引入：
+```javascript
+layui.use(['layer', 'table'], function(){
+    var $ = layui.$;  // 必须显式引入
+    // ...
+});
+```
 
 ## 配置
 

@@ -4,6 +4,104 @@
 
 {% block extra_css %}
 <style>
+    /* 页面加载动画 */
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .page-header, .stats-row, .toolbar-card, .table-card {
+        animation: fadeInUp 0.5s ease-out;
+    }
+
+    .stats-row { animation-delay: 0.1s; }
+    .toolbar-card { animation-delay: 0.2s; }
+    .table-card { animation-delay: 0.3s; }
+
+    /* 按钮点击反馈 */
+    .layui-btn:active {
+        transform: scale(0.98);
+        transition: transform 0.1s ease;
+    }
+
+    .auto-collect-btn:active {
+        transform: translateY(-2px) scale(0.98);
+    }
+
+    /* 平滑的hover效果 */
+    .stat-mini {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .stat-mini:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    }
+
+    /* 工具栏输入框聚焦效果 */
+    .toolbar-left .layui-input {
+        transition: all 0.3s ease;
+    }
+
+    .toolbar-left .layui-input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        transform: translateY(-1px);
+    }
+
+    /* 表格行hover动画优化 */
+    .layui-table tbody tr {
+        transition: background-color 0.2s ease, transform 0.2s ease;
+    }
+
+    .layui-table tbody tr:hover {
+        transform: scale(1.01);
+    }
+
+    /* 操作按钮动画 */
+    .op-btns .layui-btn {
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .op-btns .layui-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    /* 弹窗动画优化 */
+    .layui-layer {
+        animation: layerFadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes layerFadeIn {
+        from {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    /* 加载骨架屏 */
+    .skeleton {
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: loading 1.5s ease-in-out infinite;
+    }
+
+    @keyframes loading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
     /* 页面头部 */
     .page-header {
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -710,6 +808,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 layui.use(['layer', 'table', 'form', 'laytpl'], function(){
     var layer = layui.layer;
@@ -717,6 +816,34 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
     var form = layui.form;
     var laytpl = layui.laytpl;
     var $ = layui.$;  // 引入jQuery
+
+    // ========== 性能优化工具函数 ==========
+
+    // 防抖函数 - 优化搜索性能
+    function debounce(func, wait) {
+        var timeout;
+        return function() {
+            var context = this, args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(function() {
+                func.apply(context, args);
+            }, wait);
+        };
+    }
+
+    // 节流函数 - 优化频繁操作
+    function throttle(func, wait) {
+        var timeout;
+        return function() {
+            var context = this, args = arguments;
+            if (!timeout) {
+                timeout = setTimeout(function() {
+                    timeout = null;
+                    func.apply(context, args);
+                }, wait);
+            }
+        };
+    }
 
     // 缓存来源对应的规则数量
     var sourceRulesCache = {};
@@ -829,8 +956,10 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
     }
     loadStats();
 
-    // 搜索
-    document.getElementById('btnSearch').onclick = function(){
+    // ========== 性能优化的搜索功能 ==========
+
+    // 执行搜索的函数
+    function performSearch() {
         tableIns.reload({
             where: {
                 keyword: document.getElementById('searchKeyword').value,
@@ -839,32 +968,76 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
             },
             page: { curr: 1 }
         });
+    }
+
+    // 防抖搜索 - 用户输入500ms后自动搜索
+    var debouncedSearch = debounce(performSearch, 500);
+
+    // 搜索按钮点击
+    document.getElementById('btnSearch').onclick = function(){
+        performSearch();
     };
 
-    // 刷新
-    document.getElementById('btnRefresh').onclick = function(){
+    // 实时搜索 - 输入框变化时触发防抖搜索
+    document.getElementById('searchKeyword').addEventListener('input', debouncedSearch);
+
+    // 下拉框变化时立即搜索
+    document.getElementById('filterSource').addEventListener('change', performSearch);
+    document.getElementById('filterDeep').addEventListener('change', performSearch);
+
+    // 刷新 - 使用节流避免频繁点击
+    var throttledRefresh = throttle(function(){
         document.getElementById('searchKeyword').value = '';
         document.getElementById('filterSource').value = '';
         document.getElementById('filterDeep').value = '';
         tableIns.reload({ where: {}, page: { curr: 1 } });
         loadStats();
-    };
+        layer.msg('刷新成功', {icon: 1, time: 1000});
+    }, 1000);
+
+    document.getElementById('btnRefresh').onclick = throttledRefresh;
 
     // 回车搜索
     document.getElementById('searchKeyword').onkeypress = function(e){
         if(e.keyCode === 13) document.getElementById('btnSearch').click();
     };
 
-    // 表格事件
+    // 表格事件 - 优化弹窗动画
     table.on('tool(dataTable)', function(obj){
         var d = obj.data;
         if(obj.event === 'view'){
             laytpl(document.getElementById('detailTpl').innerHTML).render(d, function(html){
-                layer.open({ type: 1, title: '数据详情 - ' + (d.title.substring(0,20) + '...'), area: ['700px', '600px'], content: html, shadeClose: true });
+                layer.open({
+                    type: 1,
+                    title: '<i class="layui-icon layui-icon-about" style="color:#667eea;"></i> 数据详情',
+                    area: ['700px', '600px'],
+                    content: html,
+                    shadeClose: true,
+                    anim: 0,
+                    success: function(layero) {
+                        // 弹窗打开后的动画
+                        layero.css({
+                            'animation': 'layerFadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                        });
+                    }
+                });
             });
         } else if(obj.event === 'edit'){
             laytpl(document.getElementById('editTpl').innerHTML).render(d, function(html){
-                layer.open({ type: 1, title: '编辑数据', area: ['550px', '550px'], content: html, success: function(){ form.render(); } });
+                layer.open({
+                    type: 1,
+                    title: '<i class="layui-icon layui-icon-edit" style="color:#667eea;"></i> 编辑数据',
+                    area: ['550px', '550px'],
+                    content: html,
+                    anim: 0,
+                    success: function(layero){
+                        form.render();
+                        // 弹窗打开后的动画
+                        layero.css({
+                            'animation': 'layerFadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                        });
+                    }
+                });
             });
         } else if(obj.event === 'link'){
             window.open(d.url, '_blank');
@@ -872,50 +1045,215 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
             // 单条深度采集 - 打开规则选择弹窗
             openRuleSelectDialog([d], true);
         } else if(obj.event === 'del'){
-            layer.confirm('确定删除这条数据？', { icon: 3 }, function(idx){
-                fetch('/api/collect/' + d.id, { method: 'DELETE' }).then(r => r.json()).then(res => {
-                    if(res.code === 0){ layer.msg('已删除', {icon: 1}); tableIns.reload(); loadStats(); }
-                    else { layer.msg(res.msg, {icon: 2}); }
-                });
+            layer.confirm('确定删除这条数据？', {
+                icon: 3,
+                title: '确认删除',
+                anim: 0
+            }, function(idx){
+                var deleteBtn = layer.load(2, {shade: [0.1, '#000']});
+                fetch('/api/collect/' + d.id, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(res => {
+                        layer.close(deleteBtn);
+                        if(res.code === 0){
+                            layer.msg('删除成功', {icon: 1, time: 1500});
+                            tableIns.reload();
+                            loadStats();
+                        } else {
+                            layer.msg(res.msg, {icon: 2, time: 2000});
+                        }
+                    })
+                    .catch(function(){
+                        layer.close(deleteBtn);
+                        layer.msg('删除失败，请重试', {icon: 2, time: 2000});
+                    });
                 layer.close(idx);
             });
         }
     });
 
-    // 保存编辑
+    // 保存编辑 - 优化反馈
     form.on('submit(saveEdit)', function(data){
+        var saveBtn = layer.load(2, {shade: [0.1, '#000']});
         fetch('/api/warehouse/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data.field)
         }).then(r => r.json()).then(res => {
-            if(res.code === 0){ layer.msg('保存成功', {icon: 1}); layer.closeAll(); tableIns.reload(); }
-            else { layer.msg(res.msg, {icon: 2}); }
+            layer.close(saveBtn);
+            if(res.code === 0){
+                layer.msg('保存成功', {icon: 1, time: 1500});
+                layer.closeAll();
+                tableIns.reload();
+            } else {
+                layer.msg(res.msg, {icon: 2, time: 2000});
+            }
+        }).catch(function(){
+            layer.close(saveBtn);
+            layer.msg('保存失败，请重试', {icon: 2, time: 2000});
         });
         return false;
     });
 
-    // 批量删除
+    // 批量删除 - 优化反馈
     document.getElementById('btnDeleteBatch').onclick = function(){
         var checked = table.checkStatus('dataTable').data;
-        if(checked.length === 0){ layer.msg('请选择数据', {icon: 0}); return; }
-        layer.confirm('确定删除选中的 ' + checked.length + ' 条数据？', { icon: 3 }, function(idx){
+        if(checked.length === 0){
+            layer.msg('请先选择要删除的数据', {icon: 0, time: 2000});
+            return;
+        }
+        layer.confirm('确定删除选中的 <span style="color:#ff6b6b;font-weight:700;">' + checked.length + '</span> 条数据？<br><span style="color:#999;font-size:12px;">此操作不可恢复</span>', {
+            icon: 3,
+            title: '批量删除确认',
+            anim: 0
+        }, function(idx){
             var ids = checked.map(function(item){ return item.id; });
+            var deleteBtn = layer.load(2, {shade: [0.2, '#000']});
+
             fetch('/api/warehouse/delete-batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: ids })
             }).then(r => r.json()).then(res => {
-                if(res.code === 0){ layer.msg('删除成功', {icon: 1}); tableIns.reload(); loadStats(); }
-                else { layer.msg(res.msg, {icon: 2}); }
+                layer.close(deleteBtn);
+                layer.close(idx);
+                if(res.code === 0){
+                    layer.msg('成功删除 ' + checked.length + ' 条数据', {icon: 1, time: 2000});
+                    tableIns.reload();
+                    loadStats();
+                } else {
+                    layer.msg(res.msg, {icon: 2, time: 2000});
+                }
+            }).catch(function(){
+                layer.close(deleteBtn);
+                layer.close(idx);
+                layer.msg('删除失败，请重试', {icon: 2, time: 2000});
             });
-            layer.close(idx);
         });
     };
 
-    // AI按钮
+    // AI分析按钮
     document.getElementById('btnAi').onclick = function(){
-        layer.msg('AI分析功能即将上线', {icon: 0});
+        var checkStatus = table.checkStatus('newsTable');
+        var data = checkStatus.data;
+
+        if(data.length === 0) {
+            layer.msg('请先选择要分析的新闻', {icon: 0});
+            return;
+        }
+
+        // 获取选中的新闻ID
+        var newsIds = data.map(function(item){ return item.id; });
+
+        // 打开分析结果层
+        var analysisHtml = '<div style="padding: 24px; height: 600px; display: flex; flex-direction: column;">';
+        analysisHtml += '<div style="margin-bottom: 16px; padding: 14px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea;">';
+        analysisHtml += '<div style="display: flex; align-items: center; gap: 8px;">';
+        analysisHtml += '<i class="layui-icon layui-icon-tips" style="color: #667eea; font-size: 18px;"></i>';
+        analysisHtml += '<span style="font-size: 14px; color: #333;">正在分析 <b>' + data.length + '</b> 条新闻...</span>';
+        analysisHtml += '</div></div>';
+        analysisHtml += '<div id="analysisContent" style="flex: 1; overflow-y: auto; padding: 16px; background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; font-size: 14px; line-height: 1.8;">';
+        analysisHtml += '<div style="text-align: center; padding: 40px; color: #999;">';
+        analysisHtml += '<i class="layui-icon layui-icon-loading layui-anim layui-anim-rotate layui-anim-loop" style="font-size: 32px;"></i>';
+        analysisHtml += '<p style="margin-top: 16px;">AI正在思考中...</p>';
+        analysisHtml += '</div></div></div>';
+
+        var layerIndex = layer.open({
+            type: 1,
+            title: '<i class="layui-icon layui-icon-auz"></i> AI舆情分析',
+            area: ['900px', '700px'],
+            content: analysisHtml,
+            cancel: function(){
+                // 关闭SSE连接
+                if(window.analysisEventSource) {
+                    window.analysisEventSource.close();
+                    window.analysisEventSource = null;
+                }
+            }
+        });
+
+        // 使用fetch发送POST请求并处理SSE响应
+        var fullAnalysis = '';
+        var contentDiv = document.getElementById('analysisContent');
+
+        fetch('/api/warehouse/ai-analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ids: newsIds})
+        }).then(function(response){
+            if(!response.ok) {
+                throw new Error('请求失败');
+            }
+
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder('utf-8');
+            var buffer = '';
+
+            function processText({done, value}) {
+                if(done) {
+                    return;
+                }
+
+                buffer += decoder.decode(value, {stream: true});
+                var lines = buffer.split('\n\n');
+                buffer = lines.pop();  // 保留不完整的行
+
+                lines.forEach(function(line){
+                    if(line.startsWith('data: ')) {
+                        var jsonStr = line.substring(6);
+                        try {
+                            var eventData = JSON.parse(jsonStr);
+
+                            if(eventData.type === 'start') {
+                                // 开始分析
+                                contentDiv.innerHTML = '<div style="color: #667eea; font-size: 13px; margin-bottom: 16px;">';
+                                contentDiv.innerHTML += '<i class="layui-icon layui-icon-loading layui-anim layui-anim-rotate layui-anim-loop"></i> ';
+                                contentDiv.innerHTML += '使用引擎: ' + eventData.engine + ' | 分析 ' + eventData.news_count + ' 条新闻';
+                                contentDiv.innerHTML += '</div>';
+                                contentDiv.innerHTML += '<div id="streamContent" style="white-space: pre-wrap;"></div>';
+                            } else if(eventData.type === 'content') {
+                                // 接收内容片段
+                                fullAnalysis += eventData.content;
+                                var streamContent = document.getElementById('streamContent');
+                                if(streamContent) {
+                                    // 实时渲染Markdown
+                                    if(typeof marked !== 'undefined') {
+                                        streamContent.innerHTML = marked.parse(fullAnalysis);
+                                    } else {
+                                        streamContent.textContent = fullAnalysis;
+                                    }
+                                    // 滚动到底部
+                                    contentDiv.scrollTop = contentDiv.scrollHeight;
+                                }
+                            } else if(eventData.type === 'done') {
+                                // 分析完成
+                                var streamContent = document.getElementById('streamContent');
+                                if(streamContent && typeof marked !== 'undefined') {
+                                    streamContent.innerHTML = marked.parse(fullAnalysis);
+                                }
+                            } else if(eventData.type === 'error') {
+                                // 错误处理
+                                contentDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #f56c6c;">';
+                                contentDiv.innerHTML += '<i class="layui-icon layui-icon-face-cry" style="font-size: 48px; margin-bottom: 16px;"></i>';
+                                contentDiv.innerHTML += '<p>' + eventData.message + '</p></div>';
+                            }
+                        } catch(e) {
+                            console.error('解析SSE数据失败:', e);
+                        }
+                    }
+                });
+
+                return reader.read().then(processText);
+            }
+
+            return reader.read().then(processText);
+        }).catch(function(error){
+            contentDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #f56c6c;">';
+            contentDiv.innerHTML += '<i class="layui-icon layui-icon-face-cry" style="font-size: 48px; margin-bottom: 16px;"></i>';
+            contentDiv.innerHTML += '<p>分析失败: ' + error.message + '</p></div>';
+        });
     };
 
     // 一键自动采集
@@ -957,75 +1295,144 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
         });
     };
 
-    // 执行自动采集（使用新的后端API）
+    // 执行自动采集（使用新的后端API）- 优化版本
     function executeAutoCollect(limit) {
-        var loadIdx = layer.load(1, {shade: [0.3, '#000']});
+        // 显示实时进度弹窗
+        var progressHtml = '<div style="padding:25px;">';
+        progressHtml += '<div style="text-align:center;margin-bottom:20px;">';
+        progressHtml += '<i class="layui-icon layui-icon-loading layui-anim layui-anim-rotate layui-anim-loop" style="font-size:50px;color:#667eea;"></i>';
+        progressHtml += '<p style="font-size:16px;margin-top:15px;color:#333;"><b>正在智能采集中...</b></p>';
+        progressHtml += '<p id="progressText" style="font-size:13px;color:#888;margin-top:8px;">正在准备数据...</p>';
+        progressHtml += '</div>';
+
+        // 进度条
+        progressHtml += '<div style="background:#f5f5f5;border-radius:10px;height:10px;overflow:hidden;margin-bottom:15px;">';
+        progressHtml += '<div id="progressBar" style="width:0%;height:100%;background:linear-gradient(90deg, #667eea, #764ba2);transition:width 0.3s ease;"></div>';
+        progressHtml += '</div>';
+
+        // 实时统计
+        progressHtml += '<div style="display:flex;gap:10px;text-align:center;">';
+        progressHtml += '<div style="flex:1;padding:10px;background:#e8f5e9;border-radius:8px;">';
+        progressHtml += '<div id="successCount" style="font-size:20px;font-weight:700;color:#43a047;">0</div>';
+        progressHtml += '<div style="font-size:11px;color:#888;">成功</div></div>';
+        progressHtml += '<div style="flex:1;padding:10px;background:#ffebee;border-radius:8px;">';
+        progressHtml += '<div id="failedCount" style="font-size:20px;font-weight:700;color:#e53935;">0</div>';
+        progressHtml += '<div style="font-size:11px;color:#888;">失败</div></div>';
+        progressHtml += '<div style="flex:1;padding:10px;background:#fff3e0;border-radius:8px;">';
+        progressHtml += '<div id="skippedCount" style="font-size:20px;font-weight:700;color:#f57c00;">0</div>';
+        progressHtml += '<div style="font-size:11px;color:#888;">跳过</div></div>';
+        progressHtml += '</div></div>';
+
+        var progressLayerIdx = layer.open({
+            type: 1,
+            title: '一键自动采集',
+            area: ['450px', 'auto'],
+            content: progressHtml,
+            closeBtn: 0,
+            shadeClose: false
+        });
+
+        // 开始采集
+        var startTime = Date.now();
 
         fetch('/api/warehouse/auto-collect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ limit: limit || 100 })
         }).then(r => r.json()).then(function(res) {
-            layer.close(loadIdx);
-            loadSourceStats(); // 刷新来源统计
+            var duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
             if(res.code === 0) {
                 var data = res.data;
 
-                // 显示详细结果
-                var html = '<div style="padding:20px;">';
-                html += '<h4 style="margin-bottom:15px;color:#333;"><i class="layui-icon layui-icon-ok-circle" style="color:#43a047;"></i> 自动采集完成</h4>';
+                // 更新进度条到100%
+                $('#progressBar').css('width', '100%');
+                $('#progressText').text('采集完成！耗时 ' + duration + '秒');
+                $('#successCount').text(data.success);
+                $('#failedCount').text(data.failed);
+                $('#skippedCount').text(data.skipped);
 
-                html += '<div style="display:flex;gap:10px;margin-bottom:15px;">';
-                html += '<div style="flex:1;text-align:center;padding:12px;background:#e8f5e9;border-radius:8px;">';
-                html += '<div style="font-size:22px;font-weight:700;color:#43a047;">' + data.success + '</div>';
-                html += '<div style="font-size:11px;color:#888;">采集成功</div></div>';
-                html += '<div style="flex:1;text-align:center;padding:12px;background:#ffebee;border-radius:8px;">';
-                html += '<div style="font-size:22px;font-weight:700;color:#e53935;">' + data.failed + '</div>';
-                html += '<div style="font-size:11px;color:#888;">采集失败</div></div>';
-                html += '<div style="flex:1;text-align:center;padding:12px;background:#fff3e0;border-radius:8px;">';
-                html += '<div style="font-size:22px;font-weight:700;color:#f57c00;">' + data.skipped + '</div>';
-                html += '<div style="font-size:11px;color:#888;">已跳过</div></div>';
-                html += '</div>';
-
-                // 显示部分详情
-                if(data.details && data.details.length > 0) {
-                    html += '<div style="max-height:200px;overflow-y:auto;background:#f8f9fa;padding:10px;border-radius:6px;font-size:12px;">';
-                    data.details.slice(0, 20).forEach(function(item){
-                        var icon = item.success ? '✓' : (item.skipped ? '○' : '✗');
-                        var color = item.success ? '#43a047' : (item.skipped ? '#f57c00' : '#e53935');
-                        var info = item.success ? item.rule_used : (item.error || '');
-                        html += '<div style="margin-bottom:6px;color:' + color + ';">';
-                        html += '<span style="margin-right:5px;">' + icon + '</span>' + item.title;
-                        if(info) html += ' <span style="color:#888;">(' + info + ')</span>';
-                        html += '</div>';
-                    });
-                    if(data.details.length > 20) {
-                        html += '<div style="color:#888;text-align:center;">...及其他 ' + (data.details.length - 20) + ' 条</div>';
-                    }
-                    html += '</div>';
-                }
-
-                html += '</div>';
-
-                layer.open({
-                    type: 1,
-                    title: '采集结果',
-                    area: ['450px', 'auto'],
-                    content: html,
-                    btn: ['确定'],
-                    yes: function(idx) {
-                        layer.close(idx);
-                        tableIns.reload();
-                        loadStats();
-                    }
-                });
+                // 1.5秒后关闭进度窗口并显示详细结果
+                setTimeout(function() {
+                    layer.close(progressLayerIdx);
+                    showCollectResult(data);
+                    loadSourceStats(); // 刷新来源统计
+                    tableIns.reload();
+                    loadStats();
+                }, 1500);
             } else {
-                layer.msg(res.msg, {icon: 2});
+                layer.close(progressLayerIdx);
+                layer.msg(res.msg, {icon: 2, time: 3000});
             }
-        }).catch(function(){
-            layer.close(loadIdx);
-            layer.msg('采集请求失败', {icon: 2});
+        }).catch(function(err){
+            layer.close(progressLayerIdx);
+            layer.msg('采集请求失败，请检查网络连接', {icon: 2, time: 3000});
+        });
+    }
+
+    // 显示采集结果详情
+    function showCollectResult(data) {
+        var html = '<div style="padding:20px;">';
+        html += '<div style="text-align:center;margin-bottom:20px;">';
+        html += '<i class="layui-icon layui-icon-ok-circle" style="font-size:60px;color:#43a047;"></i>';
+        html += '<p style="font-size:18px;margin-top:10px;font-weight:600;">自动采集完成</p>';
+        html += '</div>';
+
+        html += '<div style="display:flex;gap:12px;margin-bottom:20px;">';
+        html += '<div style="flex:1;text-align:center;padding:15px;background:#e8f5e9;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">';
+        html += '<div style="font-size:28px;font-weight:700;color:#43a047;">' + data.success + '</div>';
+        html += '<div style="font-size:12px;color:#888;margin-top:4px;">采集成功</div></div>';
+        html += '<div style="flex:1;text-align:center;padding:15px;background:#ffebee;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">';
+        html += '<div style="font-size:28px;font-weight:700;color:#e53935;">' + data.failed + '</div>';
+        html += '<div style="font-size:12px;color:#888;margin-top:4px;">采集失败</div></div>';
+        html += '<div style="flex:1;text-align:center;padding:15px;background:#fff3e0;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">';
+        html += '<div style="font-size:28px;font-weight:700;color:#f57c00;">' + data.skipped + '</div>';
+        html += '<div style="font-size:12px;color:#888;margin-top:4px;">已跳过</div></div>';
+        html += '</div>';
+
+        // 显示成功率
+        var total = data.success + data.failed + data.skipped;
+        var successRate = total > 0 ? ((data.success / total) * 100).toFixed(1) : 0;
+        html += '<div style="padding:12px;background:linear-gradient(135deg, rgba(102,126,234,0.08), rgba(118,75,162,0.08));border-radius:8px;margin-bottom:15px;text-align:center;">';
+        html += '<span style="font-size:13px;color:#667eea;"><i class="layui-icon layui-icon-chart"></i> 成功率: <b>' + successRate + '%</b></span>';
+        html += '</div>';
+
+        // 显示详情列表
+        if(data.details && data.details.length > 0) {
+            html += '<div style="margin-top:15px;">';
+            html += '<div style="font-size:13px;color:#666;margin-bottom:8px;font-weight:600;"><i class="layui-icon layui-icon-list"></i> 采集详情</div>';
+            html += '<div style="max-height:250px;overflow-y:auto;background:#f8f9fa;padding:12px;border-radius:8px;border:1px solid #e0e0e0;">';
+            data.details.slice(0, 30).forEach(function(item, index){
+                var icon = item.success ? '<i class="layui-icon layui-icon-ok" style="color:#43a047;"></i>' :
+                          (item.skipped ? '<i class="layui-icon layui-icon-pause" style="color:#f57c00;"></i>' :
+                           '<i class="layui-icon layui-icon-close" style="color:#e53935;"></i>');
+                var bgColor = item.success ? '#e8f5e9' : (item.skipped ? '#fff3e0' : '#ffebee');
+                var info = item.success ? (item.rule_used || '通用规则') : (item.error || '未知错误');
+
+                html += '<div style="margin-bottom:6px;padding:8px 10px;background:' + bgColor + ';border-radius:6px;font-size:12px;display:flex;align-items:center;gap:8px;">';
+                html += icon;
+                html += '<div style="flex:1;overflow:hidden;">';
+                html += '<div style="color:#333;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (index + 1) + '. ' + item.title + '</div>';
+                html += '<div style="color:#888;font-size:11px;margin-top:2px;">' + info + '</div>';
+                html += '</div></div>';
+            });
+            if(data.details.length > 30) {
+                html += '<div style="color:#888;text-align:center;padding:8px;font-size:12px;">...及其他 ' + (data.details.length - 30) + ' 条</div>';
+            }
+            html += '</div></div>';
+        }
+
+        html += '</div>';
+
+        layer.open({
+            type: 1,
+            title: '采集结果报告',
+            area: ['550px', '650px'],
+            content: html,
+            btn: ['查看数据', '关闭'],
+            yes: function(idx) {
+                layer.close(idx);
+            }
         });
     }
 
@@ -1069,15 +1476,28 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
 
         var ruleLayerIdx = layer.open({
             type: 1,
-            title: isSingle ? '选择采集规则' : '批量深度采集 (' + dataList.length + '条)',
+            title: isSingle ? '<i class="layui-icon layui-icon-set" style="color:#667eea;"></i> 选择采集规则' : '<i class="layui-icon layui-icon-download-circle" style="color:#11998e;"></i> 批量深度采集 (' + dataList.length + '条)',
             area: ['550px', '500px'],
             content: content,
+            anim: 0,
             success: function(layero) {
+                // 添加弹窗动画
+                layero.css({
+                    'animation': 'layerFadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                });
+
                 // 显示来源信息
                 if(sources.length > 0) {
                     layero.find('#sourceInfoArea').show();
                     layero.find('#sourceInfoText').text('来源: ' + sources.join(', ') + ' | 共 ' + dataList.length + ' 条数据');
                 }
+
+                // 显示加载状态
+                var loadingHtml = '<div style="text-align:center;padding:30px;color:#888;">';
+                loadingHtml += '<i class="layui-icon layui-icon-loading layui-anim layui-anim-rotate layui-anim-loop" style="font-size:32px;color:#667eea;"></i>';
+                loadingHtml += '<p style="margin-top:10px;">正在加载匹配规则...</p>';
+                loadingHtml += '</div>';
+                layero.find('#ruleCheckboxList').html(loadingHtml);
 
                 // 加载匹配的规则
                 var queryParams = new URLSearchParams();
@@ -1102,7 +1522,11 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
                     // 渲染规则列表
                     var html = '';
                     if(allRulesData.length === 0) {
-                        html = '<div style="text-align:center;padding:30px;color:#999;">暂无采集规则，请先到<a href="/admin/crawl-rules" style="color:#667eea;">规则库</a>添加规则</div>';
+                        html = '<div style="text-align:center;padding:40px;color:#999;">';
+                        html += '<i class="layui-icon layui-icon-face-surprised" style="font-size:50px;display:block;margin-bottom:15px;opacity:0.5;"></i>';
+                        html += '<p style="font-size:14px;margin-bottom:10px;">暂无采集规则</p>';
+                        html += '<a href="/admin/crawl-rules" style="color:#667eea;font-size:13px;">前往规则库添加规则 <i class="layui-icon layui-icon-right"></i></a>';
+                        html += '</div>';
                     } else {
                         // 先显示匹配的规则
                         var sortedRules = allRulesData.slice().sort(function(a, b) {
@@ -1117,7 +1541,7 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
                             var matchedRule = matchedRules.find(function(r) { return r.id === rule.id; });
                             var matchReason = matchedRule ? matchedRule.match_reason : '';
 
-                            html += '<div class="rule-checkbox-item" data-id="' + rule.id + '">';
+                            html += '<div class="rule-checkbox-item" data-id="' + rule.id + '" style="animation:fadeInUp 0.3s ease-out;">';
                             html += '<input type="checkbox" style="width:16px;height:16px;">';
                             html += '<div class="rule-info">';
                             html += '<div class="rule-name">' + rule.site_name + '</div>';
@@ -1153,6 +1577,13 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
                             }
                         });
                     }
+                }).catch(function(err){
+                    layero.find('#ruleCheckboxList').html(
+                        '<div style="text-align:center;padding:30px;color:#ff6b6b;">' +
+                        '<i class="layui-icon layui-icon-close" style="font-size:40px;"></i>' +
+                        '<p style="margin-top:10px;">加载规则失败，请重试</p>' +
+                        '</div>'
+                    );
                 });
             },
             btn: ['开始采集', '取消'],
@@ -1194,11 +1625,39 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
                 tableIns.reload();
                 loadStats();
             } else {
-                layer.msg(res.msg, {icon: 2});
+                // 显示详细的失败原因
+                var errorMsg = res.msg || '采集失败';
+                layer.open({
+                    type: 1,
+                    title: '<i class="layui-icon layui-icon-close" style="color:#ff6b6b;"></i> 深度采集失败',
+                    area: ['450px', 'auto'],
+                    content: '<div style="padding:20px;">' +
+                        '<div style="background:#fff3e0;padding:15px;border-radius:8px;border-left:4px solid #ff9800;">' +
+                        '<p style="color:#f57c00;font-size:14px;margin-bottom:8px;"><b>失败原因:</b></p>' +
+                        '<p style="color:#666;font-size:13px;line-height:1.6;">' + errorMsg + '</p>' +
+                        '</div>' +
+                        '<div style="margin-top:15px;padding:12px;background:#f5f5f5;border-radius:6px;">' +
+                        '<p style="font-size:12px;color:#888;margin-bottom:6px;"><i class="layui-icon layui-icon-tips" style="color:#00c6fb;"></i> <b>可能的解决方案:</b></p>' +
+                        '<ul style="font-size:12px;color:#666;line-height:1.8;padding-left:20px;">' +
+                        '<li>检查规则库中是否有该网站的采集规则</li>' +
+                        '<li>确认目标网站是否可以正常访问</li>' +
+                        '<li>查看网站是否更新了页面结构</li>' +
+                        '<li>尝试选择不同的采集规则</li>' +
+                        '</ul>' +
+                        '</div>' +
+                        '<div style="margin-top:15px;text-align:center;display:flex;gap:8px;justify-content:center;">' +
+                        '<button class="layui-btn layui-btn-sm" onclick="window.showSourceRules(\'' + newsData.source + '\')" style="border-radius:20px;">' +
+                        '<i class="layui-icon layui-icon-search"></i> 查看可用规则</button>' +
+                        '<a href="/admin/crawl-rules" class="layui-btn layui-btn-sm layui-btn-normal" style="border-radius:20px;">' +
+                        '<i class="layui-icon layui-icon-set"></i> 管理规则库</a>' +
+                        '</div>' +
+                        '</div>',
+                    shadeClose: true
+                });
             }
         }).catch(function(){
             layer.close(loadIdx);
-            layer.msg('请求失败', {icon: 2});
+            layer.msg('网络请求失败，请检查连接', {icon: 2, time: 2000});
         });
     }
 
@@ -1221,31 +1680,59 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
                 // 显示详细结果
                 var failList = res.data.details.filter(function(d){ return !d.success; });
 
-                var html = '<div style="padding:15px;max-height:300px;overflow-y:auto;">';
-                html += '<p style="font-size:16px;margin-bottom:15px;"><b>采集完成</b></p>';
-                html += '<p style="color:#11998e;margin-bottom:10px;">成功: ' + res.data.success + ' 条</p>';
+                var html = '<div style="padding:20px;max-height:450px;overflow-y:auto;">';
+                html += '<div style="text-align:center;margin-bottom:20px;">';
+                html += '<i class="layui-icon layui-icon-ok-circle" style="font-size:50px;color:#11998e;"></i>';
+                html += '<p style="font-size:18px;margin-top:10px;"><b>批量采集完成</b></p>';
+                html += '</div>';
+
+                html += '<div style="display:flex;gap:12px;margin-bottom:20px;">';
+                html += '<div style="flex:1;background:#e8f5e9;padding:15px;border-radius:8px;text-align:center;">';
+                html += '<p style="font-size:24px;font-weight:700;color:#11998e;">' + res.data.success + '</p>';
+                html += '<p style="font-size:12px;color:#666;">成功</p>';
+                html += '</div>';
+                html += '<div style="flex:1;background:#ffebee;padding:15px;border-radius:8px;text-align:center;">';
+                html += '<p style="font-size:24px;font-weight:700;color:#ff6b6b;">' + res.data.failed + '</p>';
+                html += '<p style="font-size:12px;color:#666;">失败</p>';
+                html += '</div>';
+                html += '</div>';
 
                 if(failList.length > 0){
-                    html += '<p style="color:#ff6b6b;margin-bottom:10px;">失败: ' + res.data.failed + ' 条</p>';
-                    html += '<div style="background:#fff3e0;padding:10px;border-radius:6px;margin-top:10px;">';
-                    html += '<p style="font-size:12px;color:#f57c00;margin-bottom:5px;">失败详情：</p>';
-                    failList.forEach(function(item){
-                        html += '<p style="font-size:11px;color:#666;">- ' + (item.title || '').substring(0,30) + '...: ' + (item.error || '未知错误') + '</p>';
+                    html += '<div style="background:#fff3e0;padding:15px;border-radius:8px;border-left:4px solid #ff9800;">';
+                    html += '<p style="font-size:13px;color:#f57c00;margin-bottom:10px;"><i class="layui-icon layui-icon-tips"></i> <b>失败详情 (' + failList.length + '条):</b></p>';
+                    html += '<div style="max-height:200px;overflow-y:auto;">';
+                    failList.forEach(function(item, index){
+                        html += '<div style="padding:8px;background:#fff;border-radius:4px;margin-bottom:6px;border-left:2px solid #ff9800;">';
+                        html += '<p style="font-size:12px;color:#333;margin-bottom:4px;font-weight:500;">' + (index + 1) + '. ' + (item.title || '未知标题').substring(0,40) + '...</p>';
+                        html += '<p style="font-size:11px;color:#ff6b6b;"><i class="layui-icon layui-icon-close-fill"></i> ' + (item.error || '未知错误') + '</p>';
+                        html += '</div>';
                     });
+                    html += '</div>';
+                    html += '<div style="margin-top:10px;padding:10px;background:#fff;border-radius:6px;">';
+                    html += '<p style="font-size:11px;color:#888;margin-bottom:4px;"><b>建议:</b></p>';
+                    html += '<ul style="font-size:11px;color:#666;line-height:1.6;padding-left:16px;margin:0;">';
+                    html += '<li>检查规则库中是否配置了对应网站的采集规则</li>';
+                    html += '<li>确认目标网站可以正常访问</li>';
+                    html += '<li>尝试使用自动智能采集功能</li>';
+                    html += '</ul>';
+                    html += '</div>';
                     html += '</div>';
                 }
                 html += '</div>';
 
                 layer.open({
                     type: 1,
-                    title: '采集结果',
-                    area: ['400px', 'auto'],
+                    title: '批量采集结果',
+                    area: ['500px', 'auto'],
                     content: html,
-                    btn: ['确定'],
+                    btn: ['确定', '查看规则库'],
                     yes: function(index){
                         layer.close(index);
                         tableIns.reload();
                         loadStats();
+                    },
+                    btn2: function(index){
+                        window.open('/admin/crawl-rules', '_blank');
                     }
                 });
             } else {
@@ -1253,7 +1740,7 @@ layui.use(['layer', 'table', 'form', 'laytpl'], function(){
             }
         }).catch(function(){
             layer.close(loadIdx);
-            layer.msg('请求失败', {icon: 2});
+            layer.msg('网络请求失败，请检查连接', {icon: 2});
         });
     }
 

@@ -378,6 +378,11 @@ layui.use(['layer', 'form', 'laytpl'], function(){
         var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:20px;">';
 
         crawlerData.forEach(function(crawler) {
+            // 计算成功率
+            var total = (crawler.success_count || 0) + (crawler.fail_count || 0);
+            var successRate = total > 0 ? ((crawler.success_count || 0) / total * 100).toFixed(1) : '-';
+            var rateColor = successRate === '-' ? '#999' : (successRate >= 80 ? '#11998e' : (successRate >= 50 ? '#f57c00' : '#e53935'));
+
             html += `
                 <div class="crawler-card ${crawler.status == 0 ? 'disabled' : ''}">
                     <div class="crawler-header">
@@ -402,7 +407,7 @@ layui.use(['layer', 'form', 'laytpl'], function(){
                     </div>
                     <div class="crawler-stats">
                         <div class="stat-item">
-                            <div class="stat-value">${crawler.success_count || 0}</div>
+                            <div class="stat-value" style="color:#11998e;">${crawler.success_count || 0}</div>
                             <div class="stat-label">成功次数</div>
                         </div>
                         <div class="stat-item">
@@ -410,25 +415,25 @@ layui.use(['layer', 'form', 'laytpl'], function(){
                             <div class="stat-label">失败次数</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value" style="color:#43a047;">${crawler.success_rate}</div>
+                            <div class="stat-value" style="color:${rateColor};">${successRate}%</div>
                             <div class="stat-label">成功率</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value" style="font-size:12px;color:#666;">${crawler.last_used_at}</div>
+                            <div class="stat-value" style="font-size:12px;color:#666;">${crawler.last_used_at || '未使用'}</div>
                             <div class="stat-label">最后使用</div>
                         </div>
                     </div>
                     <div class="crawler-actions">
-                        <button class="layui-btn layui-btn-sm layui-btn-normal" onclick="testCrawler(${crawler.id})">
+                        <button class="layui-btn layui-btn-sm layui-btn-normal" onclick="testCrawler(${crawler.id})" title="测试爬虫功能">
                             <i class="layui-icon layui-icon-play"></i> 测试
                         </button>
-                        <button class="layui-btn layui-btn-sm" onclick="editCrawler(${crawler.id})">
+                        <button class="layui-btn layui-btn-sm" onclick="editCrawler(${crawler.id})" title="编辑爬虫配置">
                             <i class="layui-icon layui-icon-edit"></i> 编辑
                         </button>
-                        <button class="layui-btn layui-btn-sm ${crawler.status == 1 ? 'layui-btn-warm' : 'layui-btn-normal'}" onclick="toggleStatus(${crawler.id})">
+                        <button class="layui-btn layui-btn-sm ${crawler.status == 1 ? 'layui-btn-warm' : 'layui-btn-normal'}" onclick="toggleStatus(${crawler.id})" title="${crawler.status == 1 ? '禁用爬虫' : '启用爬虫'}">
                             <i class="layui-icon ${crawler.status == 1 ? 'layui-icon-pause' : 'layui-icon-play'}"></i> ${crawler.status == 1 ? '禁用' : '启用'}
                         </button>
-                        ${!crawler.is_builtin ? `<button class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteCrawler(${crawler.id})">
+                        ${!crawler.is_builtin ? `<button class="layui-btn layui-btn-sm layui-btn-danger" onclick="deleteCrawler(${crawler.id})" title="删除爬虫">
                             <i class="layui-icon layui-icon-delete"></i> 删除
                         </button>` : ''}
                     </div>
@@ -544,28 +549,66 @@ layui.use(['layer', 'form', 'laytpl'], function(){
 
                 if(res.code === 0) {
                     var sample = res.data.sample;
-                    var html = '<div style="padding:15px;">';
-                    html += '<p style="color:#43a047;font-weight:600;margin-bottom:15px;"><i class="layui-icon layui-icon-ok-circle"></i> ' + res.msg + '</p>';
+                    var html = '<div style="padding:20px;">';
+                    html += '<div style="background:#e8f5e9;padding:12px;border-radius:8px;margin-bottom:15px;border-left:4px solid #43a047;">';
+                    html += '<p style="color:#43a047;font-weight:600;margin:0;"><i class="layui-icon layui-icon-ok-circle"></i> 测试成功</p>';
+                    html += '<p style="color:#666;font-size:12px;margin:6px 0 0 0;">获取到 ' + (res.data.count || 0) + ' 条数据</p>';
+                    html += '</div>';
+
                     if(sample) {
-                        html += '<div style="background:#f8f9fa;padding:12px;border-radius:8px;">';
-                        html += '<p style="font-weight:600;margin-bottom:8px;">' + (sample.title || '').substring(0, 50) + '...</p>';
-                        html += '<p style="font-size:12px;color:#666;">' + (sample.summary || '').substring(0, 100) + '...</p>';
-                        html += '<p style="font-size:11px;color:#888;margin-top:8px;">来源: ' + (sample.source || '-') + '</p>';
+                        html += '<div style="margin-bottom:10px;"><p style="font-size:12px;color:#666;font-weight:600;margin-bottom:8px;">示例新闻：</p>';
+                        html += '<div style="background:#f8f9fa;padding:14px;border-radius:8px;border-left:3px solid #667eea;">';
+                        html += '<p style="font-weight:600;margin:0 0 8px 0;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (sample.title || '') + '">' + (sample.title || '未知').substring(0, 50) + '</p>';
+                        if(sample.summary) {
+                            html += '<p style="font-size:12px;color:#666;margin:0 0 8px 0;line-height:1.6;max-height:60px;overflow:hidden;">' + (sample.summary || '').substring(0, 120) + '...</p>';
+                        }
+                        html += '<div style="display:flex;gap:15px;font-size:11px;color:#888;">';
+                        html += '<span><i class="layui-icon layui-icon-website"></i> ' + (sample.source || '-') + '</span>';
+                        if(sample.created_at) {
+                            html += '<span><i class="layui-icon layui-icon-date"></i> ' + sample.created_at + '</span>';
+                        }
                         html += '</div>';
+                        html += '</div></div>';
                     }
                     html += '</div>';
 
                     layer.open({
                         type: 1,
-                        title: '测试结果',
-                        area: ['450px', 'auto'],
-                        content: html
+                        title: '<i class="layui-icon layui-icon-ok-circle" style="color:#43a047;"></i> 测试结果',
+                        area: ['500px', 'auto'],
+                        content: html,
+                        shadeClose: true
                     });
                     loadCrawlers();
                 } else {
-                    layer.msg(res.msg, {icon: 2, time: 3000});
+                    // 显示详细错误信息
+                    var errorHtml = '<div style="padding:20px;">';
+                    errorHtml += '<div style="background:#ffebee;padding:15px;border-radius:8px;border-left:4px solid #e53935;margin-bottom:15px;">';
+                    errorHtml += '<p style="color:#e53935;font-weight:600;margin:0 0 8px 0;"><i class="layui-icon layui-icon-close-circle"></i> 测试失败</p>';
+                    errorHtml += '<p style="color:#666;font-size:13px;margin:0;line-height:1.6;">' + (res.msg || '未知错误') + '</p>';
+                    errorHtml += '</div>';
+
+                    if(res.data && res.data.error_detail) {
+                        errorHtml += '<div style="background:#fff3e0;padding:12px;border-radius:8px;border-left:3px solid #f57c00;">';
+                        errorHtml += '<p style="color:#f57c00;font-weight:600;font-size:12px;margin:0 0 6px 0;"><i class="layui-icon layui-icon-tips"></i> 错误详情</p>';
+                        errorHtml += '<p style="color:#666;font-size:12px;margin:0;font-family:monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-word;">' + res.data.error_detail + '</p>';
+                        errorHtml += '</div>';
+                    }
+
+                    errorHtml += '</div>';
+
+                    layer.open({
+                        type: 1,
+                        title: '<i class="layui-icon layui-icon-face-cry" style="color:#e53935;"></i> 测试失败',
+                        area: ['500px', 'auto'],
+                        content: errorHtml,
+                        shadeClose: true
+                    });
                     loadCrawlers();
                 }
+            }).catch(function(err) {
+                layer.close(loadIdx);
+                layer.msg('网络错误: ' + err.message, {icon: 2, time: 2000});
             });
         });
     };

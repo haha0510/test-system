@@ -371,13 +371,24 @@ layui.use(['layer', 'form'], function(){
         }, 500);
 
         // 发起请求
+        console.log('发送采集请求:', { keyword: keyword, count: count, source: source });
         fetch('/api/news/search', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
             body: JSON.stringify({ keyword: keyword, count: count, source: source })
         })
-        .then(res => res.json())
+        .then(res => {
+            console.log('响应状态:', res.status, res.statusText);
+            if (!res.ok) {
+                throw new Error('HTTP错误: ' + res.status + ' ' + res.statusText);
+            }
+            return res.json();
+        })
         .then(data => {
+            console.log('响应数据:', data);
             clearInterval(progressTimer);
             progressInner.style.width = '100%';
             progressText.textContent = '采集完成！';
@@ -389,7 +400,7 @@ layui.use(['layer', 'form'], function(){
                 document.getElementById('btnCollect').disabled = false;
                 document.getElementById('btnCollect').innerHTML = '<i class="layui-icon layui-icon-search"></i> 开始采集';
 
-                if (data.code === 0 && data.data.length > 0) {
+                if (data.code === 0 && data.data && data.data.length > 0) {
                     collectedData = data.data.map(function(item, index) {
                         return {
                             ...item,
@@ -404,18 +415,22 @@ layui.use(['layer', 'form'], function(){
                     });
                     renderNewsList();
                     layer.msg('从' + (data.source_name || sourceName) + '成功采集 ' + data.data.length + ' 条数据', {icon: 1});
+                } else if (data.code === 0 && (!data.data || data.data.length === 0)) {
+                    document.getElementById('newsList').innerHTML = '<div class="empty-state"><i class="layui-icon layui-icon-face-surprised"></i><p>未找到相关数据，请尝试其他关键词或数据源</p></div>';
+                    layer.msg('未找到匹配的数据', {icon: 0});
                 } else {
                     document.getElementById('newsList').innerHTML = '<div class="empty-state"><i class="layui-icon layui-icon-face-surprised"></i><p>未找到相关数据，请尝试其他关键词或数据源</p></div>';
-                    layer.msg(data.msg || '未找到数据', {icon: 0});
+                    layer.msg(data.msg || '采集失败: ' + JSON.stringify(data), {icon: 2});
                 }
             }, 500);
         })
         .catch(err => {
+            console.error('请求错误:', err);
             clearInterval(progressTimer);
             progressWrap.classList.remove('show');
             document.getElementById('btnCollect').disabled = false;
             document.getElementById('btnCollect').innerHTML = '<i class="layui-icon layui-icon-search"></i> 开始采集';
-            layer.msg('采集失败: ' + err.message, {icon: 2});
+            layer.msg('采集失败: ' + (err.message || '未知错误'), {icon: 2});
         });
     }
 

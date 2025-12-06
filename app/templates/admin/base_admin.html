@@ -1,17 +1,58 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <title>{% block title %}后台管理{% endblock %} - 政企智能舆情分析系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='layui-v2.13.2/layui/css/layui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/apple-style.css') }}">
     <style>
+        :root {
+            /* 亮色主题 */
+            --bg-primary: #ffffff;
+            --bg-secondary: #f5f5f7;
+            --bg-sidebar: #fafafa;
+            --text-primary: #1d1d1f;
+            --text-secondary: #6e6e73;
+            --text-tertiary: #86868b;
+            --border-color: rgba(0, 0, 0, 0.08);
+            --shadow-color: rgba(0, 0, 0, 0.08);
+            --nav-hover-bg: rgba(0, 0, 0, 0.04);
+            --nav-active-bg: #e8f0fe;
+            --header-bg: rgba(255, 255, 255, 0.8);
+            --card-bg: #ffffff;
+        }
+
+        [data-theme="dark"] {
+            /* 暗色主题 */
+            --bg-primary: #000000;
+            --bg-secondary: #1c1c1e;
+            --bg-sidebar: #1c1c1e;
+            --text-primary: #f5f5f7;
+            --text-secondary: #98989d;
+            --text-tertiary: #636366;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --nav-hover-bg: rgba(255, 255, 255, 0.08);
+            --nav-active-bg: rgba(0, 113, 227, 0.2);
+            --header-bg: rgba(28, 28, 30, 0.8);
+            --card-bg: #1c1c1e;
+        }
+
+        * {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
         html, body {
             margin: 0;
             padding: 0;
             height: 100%;
-            background: #f0f2f5;
+            background: var(--bg-secondary);
+            font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            transition: background 0.3s ease, color 0.3s ease;
         }
+
         /* 顶部导航 */
         .admin-header {
             position: fixed;
@@ -19,251 +60,493 @@
             left: 0;
             right: 0;
             z-index: 1000;
-            height: 60px;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            height: 52px;
+            background: var(--header-bg);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 24px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            padding: 0 32px;
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 1px 0 0 var(--shadow-color);
+            transition: all 0.3s ease;
         }
-        .admin-header::before {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, #00f2ff, #4facfe, #00f2ff);
-            background-size: 200% 100%;
-            animation: gradientFlow 3s ease infinite;
-        }
-        @keyframes gradientFlow {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
+
         .admin-header .logo {
             display: flex;
             align-items: center;
-            color: #fff;
-            font-size: 20px;
+            color: var(--text-primary);
+            font-size: 17px;
             font-weight: 600;
-            letter-spacing: 1px;
+            letter-spacing: -0.02em;
+            cursor: pointer;
+            transition: opacity 0.3s ease;
         }
+
+        .admin-header .logo:hover {
+            opacity: 0.7;
+        }
+
         .admin-header .logo i {
-            font-size: 32px;
-            margin-right: 12px;
-            color: #00f2ff;
-            text-shadow: 0 0 20px rgba(0,242,255,0.5);
-            animation: iconPulse 2s ease-in-out infinite;
+            font-size: 26px;
+            margin-right: 8px;
+            color: #0071e3;
+            transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
         }
-        @keyframes iconPulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
+
+        .admin-header .logo:hover i {
+            transform: scale(1.1);
         }
-        .admin-header .logo span {
-            background: linear-gradient(90deg, #fff, #00f2ff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
+
         .admin-header .user-info {
             display: flex;
             align-items: center;
-            color: #fff;
+            gap: 12px;
         }
+
+        /* 主题切换按钮 */
+        .theme-toggle {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--nav-hover-bg);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .theme-toggle:hover {
+            background: var(--nav-active-bg);
+            transform: scale(1.05);
+        }
+
+        .theme-toggle i {
+            font-size: 18px;
+            color: var(--text-primary);
+            transition: transform 0.6s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+        }
+
+        .theme-toggle:active i {
+            transform: rotate(360deg);
+        }
+
         .admin-header .user-info > span {
-            margin-right: 20px;
-            padding: 8px 16px;
-            background: rgba(255,255,255,0.08);
-            border-radius: 20px;
             font-size: 14px;
-            transition: all 0.3s ease;
+            color: var(--text-secondary);
+            font-weight: 400;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
-        .admin-header .user-info > span:hover {
-            background: rgba(255,255,255,0.15);
-        }
+
         .admin-header .user-info > span i {
-            margin-right: 6px;
-            color: #00f2ff;
+            color: #0071e3;
+            font-size: 16px;
         }
+
         .admin-header .user-info .layui-btn {
-            background: linear-gradient(135deg, #00f2ff 0%, #4facfe 100%);
+            background: #0071e3;
             border: none;
             border-radius: 20px;
-            padding: 0 20px;
+            padding: 0 18px;
+            height: 32px;
+            line-height: 32px;
+            font-size: 13px;
             font-weight: 500;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0,242,255,0.3);
+            color: #fff;
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
         }
+
         .admin-header .user-info .layui-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0,242,255,0.4);
+            background: #0077ed;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3);
         }
-        /* 侧边栏 */
+
+        /* 优化后的侧边栏 */
         .admin-side {
             position: fixed;
             left: 0;
-            top: 60px;
+            top: 52px;
             bottom: 0;
-            width: 220px;
-            background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+            width: 260px;
+            background: var(--bg-sidebar);
             overflow-y: auto;
-            box-shadow: 4px 0 20px rgba(0,0,0,0.1);
+            overflow-x: hidden;
+            border-right: 1px solid var(--border-color);
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
         }
+
+        /* 隐藏滚动条但保持滚动功能 */
+        .admin-side {
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none;  /* IE 10+ */
+        }
+
         .admin-side::-webkit-scrollbar {
-            width: 6px;
+            display: none; /* Chrome Safari */
         }
-        .admin-side::-webkit-scrollbar-thumb {
-            background: rgba(0,242,255,0.3);
-            border-radius: 3px;
-        }
-        .admin-side .side-title {
-            padding: 20px 24px 12px;
-            color: rgba(255,255,255,0.4);
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-        .admin-side .layui-nav {
-            background: transparent;
-            padding: 10px 0;
-        }
-        .admin-side .layui-nav .layui-nav-item {
-            margin: 4px 12px;
-        }
-        .admin-side .layui-nav .layui-nav-item a {
-            color: rgba(255,255,255,0.7);
-            padding: 0 20px;
-            height: 50px;
-            line-height: 50px;
-            border-radius: 10px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }
-        .admin-side .layui-nav .layui-nav-item a::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 4px;
-            height: 0;
-            background: linear-gradient(180deg, #00f2ff, #4facfe);
-            border-radius: 0 4px 4px 0;
-            transition: height 0.3s ease;
-        }
-        .admin-side .layui-nav .layui-nav-item a:hover {
-            background: rgba(0,242,255,0.1);
-            color: #fff;
-            transform: translateX(4px);
-        }
-        .admin-side .layui-nav .layui-nav-item a:hover::before {
-            height: 24px;
-        }
-        .admin-side .layui-nav .layui-this a {
-            background: linear-gradient(90deg, rgba(0,242,255,0.2), rgba(79,172,254,0.1));
-            color: #00f2ff;
-            font-weight: 500;
-        }
-        .admin-side .layui-nav .layui-this a::before {
-            height: 24px;
-        }
-        .admin-side .layui-nav .layui-nav-item a i {
-            margin-right: 12px;
-            font-size: 18px;
+
+        /* 侧边栏用户信息卡片 */
+        .sidebar-user-card {
+            margin: 20px 16px;
+            padding: 16px;
+            background: var(--nav-hover-bg);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
             transition: all 0.3s ease;
         }
-        .admin-side .layui-nav .layui-nav-item a:hover i {
-            color: #00f2ff;
-            transform: scale(1.1);
+
+        .sidebar-user-card:hover {
+            background: var(--nav-active-bg);
         }
-        .admin-side .layui-nav .layui-this a i {
-            color: #00f2ff;
-            text-shadow: 0 0 10px rgba(0,242,255,0.5);
+
+        .sidebar-user-card .avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 18px;
+            font-weight: 600;
         }
+
+        .sidebar-user-card .user-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sidebar-user-card .user-details .name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+
+        .sidebar-user-card .user-details .role {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* 菜单分组标题 */
+        .nav-group {
+            margin-top: 24px;
+        }
+
+        .nav-group:first-child {
+            margin-top: 12px;
+        }
+
+        .nav-group-title {
+            padding: 0 24px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .admin-side .layui-nav {
+            background: transparent;
+            padding: 0 0 16px;
+        }
+
+        .admin-side .layui-nav .layui-nav-item {
+            margin: 2px 12px;
+            position: relative;
+        }
+
+        /* 菜单项 - 简洁样式 */
+        .admin-side .layui-nav .layui-nav-item a {
+            color: var(--text-primary);
+            padding: 0 16px;
+            height: 42px;
+            line-height: 42px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 400;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            border: 1px solid transparent;
+            background: transparent;
+        }
+
+        /* Hover状态 - 简单背景变化 */
+        .admin-side .layui-nav .layui-nav-item a:hover {
+            background: var(--nav-hover-bg);
+            color: #0071e3;
+        }
+
+        /* 选中状态 - 简洁边框 */
+        .admin-side .layui-nav .layui-this > a,
+        .admin-side .layui-nav .layui-this a,
+        .admin-side .layui-nav .layui-nav-itemed > a,
+        .admin-side .layui-nav .layui-this dd a {
+            background: transparent !important;
+            color: #0071e3 !important;
+            font-weight: 500;
+            border: 1px solid #0071e3 !important;
+        }
+
+        /* 选中状态的图标和文字 */
+        .admin-side .layui-nav .layui-this a .nav-icon,
+        .admin-side .layui-nav .layui-this a span,
+        .admin-side .layui-nav .layui-this a cite {
+            color: #0071e3 !important;
+        }
+
+        /* 图标样式 - 移除动画 */
+        .admin-side .layui-nav .layui-nav-item a i.nav-icon {
+            margin-right: 12px;
+            font-size: 18px;
+            width: 20px;
+            text-align: center;
+        }
+
+        /* 菜单项徽章 */
+        .nav-badge {
+            margin-left: auto;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #ff3b30;
+            color: #fff;
+            min-width: 18px;
+            text-align: center;
+        }
+
+        .nav-badge.new {
+            background: #0071e3;
+        }
+
+        .nav-badge.beta {
+            background: #ff9500;
+        }
+
+        /* 菜单项右侧箭头 - 移除动画 */
+        .nav-arrow {
+            margin-left: auto;
+            font-size: 14px;
+            color: var(--text-tertiary);
+        }
+
         .admin-side .layui-nav-bar {
             display: none;
         }
+
         /* 主体内容 */
         .admin-body {
-            margin-left: 220px;
-            padding: 24px;
-            min-height: calc(100vh - 60px);
-            margin-top: 60px;
-            background: #f0f2f5;
+            margin-left: 260px;
+            padding: 32px;
+            min-height: calc(100vh - 52px);
+            margin-top: 52px;
+            background: var(--bg-secondary);
+            transition: all 0.3s ease;
         }
+
         .admin-body .layui-card {
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            border-radius: 18px;
+            box-shadow: 0 2px 8px var(--shadow-color);
             border: none;
             overflow: hidden;
+            background: var(--card-bg);
+            transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
         }
+
+        .admin-body .layui-card:hover {
+            box-shadow: 0 4px 16px var(--shadow-color);
+        }
+
         .admin-body .layui-card-header {
             font-weight: 600;
-            border-bottom: 1px solid #f0f0f0;
-            font-size: 16px;
-            padding: 16px 20px;
-            background: #fff;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 17px;
+            padding: 20px 24px;
+            background: var(--bg-sidebar);
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
         }
-        /* 数据卡片 */
-        .data-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 16px;
+
+        .admin-body .layui-card-body {
             padding: 24px;
-            color: #fff;
-            margin-bottom: 20px;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
+            background: var(--card-bg);
         }
-        .data-card::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
-            transition: all 0.4s ease;
+
+        /* 响应式布局 */
+        @media (max-width: 1024px) {
+            .admin-side {
+                transform: translateX(-260px);
+            }
+
+            .admin-side.mobile-show {
+                transform: translateX(0);
+                box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+            }
+
+            .admin-body {
+                margin-left: 0;
+                padding: 20px 16px;
+            }
+
+            .admin-header {
+                padding: 0 16px;
+            }
         }
-        .data-card:hover {
-            transform: translateY(-8px);
-            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+
+        @media (max-width: 768px) {
+            .admin-body {
+                padding: 16px 12px;
+            }
+
+            .admin-body .layui-card {
+                border-radius: 12px;
+            }
+
+            .admin-body .layui-card-header {
+                font-size: 15px;
+                padding: 16px 18px;
+            }
+
+            .admin-body .layui-card-body {
+                padding: 18px;
+            }
+
+            .sidebar-user-card {
+                margin: 16px 12px;
+                padding: 12px;
+            }
         }
-        .data-card:hover::before {
-            transform: scale(1.5);
+
+        /* 移动端菜单按钮 */
+        .menu-toggle {
+            display: none;
+            width: 32px;
+            height: 32px;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
         }
-        .data-card.blue { background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%); }
-        .data-card.cyan { background: linear-gradient(135deg, #00c6fb 0%, #005bea 100%); }
-        .data-card.green { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
-        .data-card.orange { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-        .data-card h3 {
-            font-size: 14px;
-            opacity: 0.9;
-            margin-bottom: 12px;
-            font-weight: 400;
-            letter-spacing: 1px;
+
+        .menu-toggle:hover {
+            background: var(--nav-hover-bg);
         }
-        .data-card .num {
-            font-size: 36px;
-            font-weight: 700;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+
+        .menu-toggle i {
+            font-size: 20px;
+            color: var(--text-primary);
+        }
+
+        @media (max-width: 1024px) {
+            .menu-toggle {
+                display: flex;
+            }
+
+            .admin-header .logo {
+                flex: 1;
+                justify-content: center;
+            }
+
+            .admin-header .user-info > span {
+                display: none;
+            }
+        }
+
+        /* 遮罩层 */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.3);
+            z-index: 999;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* 页面过渡动画 - 优化版 */
+        .admin-body {
+            animation: fadeIn 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        /* 暗色模式下的特殊样式 */
+        [data-theme="dark"] .admin-header .user-info .layui-btn {
+            box-shadow: 0 4px 12px rgba(0, 113, 227, 0.5);
+        }
+
+        [data-theme="dark"] .sidebar-user-card .avatar {
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        /* 暗色模式 - 选中状态 */
+        [data-theme="dark"] .admin-side .layui-nav .layui-this > a,
+        [data-theme="dark"] .admin-side .layui-nav .layui-this a,
+        [data-theme="dark"] .admin-side .layui-nav .layui-nav-itemed > a,
+        [data-theme="dark"] .admin-side .layui-nav .layui-this dd a {
+            background: transparent !important;
+            color: #5ac8fa !important;
+            border-color: #5ac8fa !important;
+        }
+
+        [data-theme="dark"] .admin-side .layui-nav .layui-this a .nav-icon,
+        [data-theme="dark"] .admin-side .layui-nav .layui-this a span,
+        [data-theme="dark"] .admin-side .layui-nav .layui-this a cite {
+            color: #5ac8fa !important;
+        }
+
+        /* 暗色模式 - Hover状态 */
+        [data-theme="dark"] .admin-side .layui-nav .layui-nav-item a:hover {
+            color: #5ac8fa;
         }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
+    <!-- 侧边栏遮罩 (移动端) -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
     <!-- 顶部导航 -->
     <div class="admin-header">
-        <div class="logo">
+        <div class="menu-toggle" id="menuToggle">
+            <i class="layui-icon layui-icon-spread-left"></i>
+        </div>
+        <div class="logo" onclick="window.location.href='{{ url_for('main.dashboard') }}'">
             <i class="layui-icon layui-icon-app"></i>
             <span>政企智能舆情分析系统</span>
         </div>
         <div class="user-info">
-            <span><i class="layui-icon layui-icon-username"></i> {{ session.username }}</span>
+            <button class="theme-toggle" id="themeToggle" title="切换主题">
+                <i class="layui-icon layui-icon-light" id="themeIcon"></i>
+            </button>
+            <span><i class="layui-icon layui-icon-username"></i>{{ session.username }}</span>
             <button class="layui-btn layui-btn-sm" id="logoutBtn">
                 <i class="layui-icon layui-icon-logout"></i> 退出
             </button>
@@ -271,35 +554,100 @@
     </div>
 
     <!-- 侧边导航 -->
-    <div class="admin-side">
-        <ul class="layui-nav layui-nav-tree">
-            <li class="layui-nav-item {% if request.endpoint == 'main.dashboard' %}layui-this{% endif %}">
-                <a href="{{ url_for('main.dashboard') }}"><i class="layui-icon layui-icon-home"></i>仪表盘</a>
-            </li>
-            <li class="layui-nav-item {% if request.endpoint == 'main.data_collect' %}layui-this{% endif %}">
-                <a href="{{ url_for('main.data_collect') }}"><i class="layui-icon layui-icon-download-circle"></i>数据采集</a>
-            </li>
-            <li class="layui-nav-item {% if request.endpoint == 'main.data_warehouse' %}layui-this{% endif %}">
-                <a href="{{ url_for('main.data_warehouse') }}"><i class="layui-icon layui-icon-template-1"></i>数据仓库</a>
-            </li>
-            <li class="layui-nav-item {% if request.endpoint == 'main.crawl_rules' %}layui-this{% endif %}">
-                <a href="{{ url_for('main.crawl_rules') }}"><i class="layui-icon layui-icon-set"></i>规则库</a>
-            </li>
-            <li class="layui-nav-item {% if request.endpoint == 'main.ai_engines' %}layui-this{% endif %}">
-                <a href="{{ url_for('main.ai_engines') }}"><i class="layui-icon layui-icon-auz"></i>AI引擎</a>
-            </li>
-            <li class="layui-nav-item {% if request.endpoint == 'main.crawlers' %}layui-this{% endif %}">
-                <a href="{{ url_for('main.crawlers') }}"><i class="layui-icon layui-icon-website"></i>爬虫管理</a>
-            </li>
-            {% if session.role == 'admin' %}
-            <li class="layui-nav-item {% if request.endpoint == 'main.user_manage' %}layui-this{% endif %}">
-                <a href="{{ url_for('main.user_manage') }}"><i class="layui-icon layui-icon-user"></i>用户管理</a>
-            </li>
-            <li class="layui-nav-item {% if request.endpoint == 'main.system_settings' %}layui-this{% endif %}">
-                <a href="{{ url_for('main.system_settings') }}"><i class="layui-icon layui-icon-set"></i>系统设置</a>
-            </li>
-            {% endif %}
-        </ul>
+    <div class="admin-side" id="adminSide">
+        <!-- 用户信息卡片 -->
+        <div class="sidebar-user-card">
+            <div class="avatar">{{ session.username[0].upper() }}</div>
+            <div class="user-details">
+                <div class="name">{{ session.username }}</div>
+                <div class="role">{% if session.role == 'admin' %}系统管理员{% else %}普通用户{% endif %}</div>
+            </div>
+        </div>
+
+        <!-- 核心功能 -->
+        <div class="nav-group">
+            <div class="nav-group-title">核心功能</div>
+            <ul class="layui-nav layui-nav-tree">
+                <li class="layui-nav-item {% if request.endpoint == 'main.dashboard' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.dashboard') }}">
+                        <i class="layui-icon layui-icon-home nav-icon"></i>
+                        <span>仪表盘</span>
+                    </a>
+                </li>
+                <li class="layui-nav-item {% if request.endpoint == 'main.data_collect' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.data_collect') }}">
+                        <i class="layui-icon layui-icon-download-circle nav-icon"></i>
+                        <span>数据采集</span>
+                    </a>
+                </li>
+                <li class="layui-nav-item {% if request.endpoint == 'main.data_warehouse' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.data_warehouse') }}">
+                        <i class="layui-icon layui-icon-template-1 nav-icon"></i>
+                        <span>数据仓库</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- AI智能分析 -->
+        <div class="nav-group">
+            <div class="nav-group-title">AI智能分析</div>
+            <ul class="layui-nav layui-nav-tree">
+                <li class="layui-nav-item {% if request.endpoint == 'main.ai_data_analysis' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.ai_data_analysis') }}">
+                        <i class="layui-icon layui-icon-console nav-icon"></i>
+                        <span>AI数据分析</span>
+                        <span class="nav-badge new">NEW</span>
+                    </a>
+                </li>
+                <li class="layui-nav-item {% if request.endpoint == 'main.ai_engines' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.ai_engines') }}">
+                        <i class="layui-icon layui-icon-auz nav-icon"></i>
+                        <span>AI引擎配置</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- 数据管理 -->
+        <div class="nav-group">
+            <div class="nav-group-title">数据管理</div>
+            <ul class="layui-nav layui-nav-tree">
+                <li class="layui-nav-item {% if request.endpoint == 'main.crawl_rules' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.crawl_rules') }}">
+                        <i class="layui-icon layui-icon-set nav-icon"></i>
+                        <span>采集规则库</span>
+                    </a>
+                </li>
+                <li class="layui-nav-item {% if request.endpoint == 'main.crawlers' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.crawlers') }}">
+                        <i class="layui-icon layui-icon-website nav-icon"></i>
+                        <span>爬虫管理</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <!-- 系统设置 (仅管理员) -->
+        {% if session.role == 'admin' %}
+        <div class="nav-group">
+            <div class="nav-group-title">系统管理</div>
+            <ul class="layui-nav layui-nav-tree">
+                <li class="layui-nav-item {% if request.endpoint == 'main.user_manage' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.user_manage') }}">
+                        <i class="layui-icon layui-icon-user nav-icon"></i>
+                        <span>用户管理</span>
+                    </a>
+                </li>
+                <li class="layui-nav-item {% if request.endpoint == 'main.system_settings' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.system_settings') }}">
+                        <i class="layui-icon layui-icon-set nav-icon"></i>
+                        <span>系统设置</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+        {% endif %}
     </div>
 
     <!-- 主体内容 -->
@@ -309,18 +657,104 @@
 
     <script src="{{ url_for('static', filename='layui-v2.13.2/layui/layui.js') }}"></script>
     <script>
+        // 主题管理
+        const ThemeManager = {
+            init() {
+                // 从localStorage读取主题设置
+                const savedTheme = localStorage.getItem('theme') || 'light';
+                this.setTheme(savedTheme);
+                this.bindEvents();
+            },
+
+            setTheme(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('theme', theme);
+
+                // 更新图标
+                const icon = document.getElementById('themeIcon');
+                if (theme === 'dark') {
+                    icon.className = 'layui-icon layui-icon-moon';
+                } else {
+                    icon.className = 'layui-icon layui-icon-light';
+                }
+            },
+
+            toggleTheme() {
+                const currentTheme = document.documentElement.getAttribute('data-theme');
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                this.setTheme(newTheme);
+            },
+
+            bindEvents() {
+                document.getElementById('themeToggle').addEventListener('click', () => {
+                    this.toggleTheme();
+                });
+            }
+        };
+
+        // 初始化
+        window.addEventListener('DOMContentLoaded', function() {
+            // 初始化主题
+            ThemeManager.init();
+        });
+
         layui.use(['element', 'layer'], function(){
             var layer = layui.layer;
+            var $ = layui.$;
+
+            // 移动端菜单切换
+            var menuToggle = document.getElementById('menuToggle');
+            var adminSide = document.getElementById('adminSide');
+            var overlay = document.getElementById('sidebarOverlay');
+
+            if (menuToggle) {
+                menuToggle.onclick = function() {
+                    adminSide.classList.toggle('mobile-show');
+                    overlay.classList.toggle('show');
+                    var icon = this.querySelector('i');
+                    if (adminSide.classList.contains('mobile-show')) {
+                        icon.classList.remove('layui-icon-spread-left');
+                        icon.classList.add('layui-icon-shrink-right');
+                    } else {
+                        icon.classList.remove('layui-icon-shrink-right');
+                        icon.classList.add('layui-icon-spread-left');
+                    }
+                };
+
+                // 点击遮罩层关闭侧边栏
+                overlay.onclick = function() {
+                    adminSide.classList.remove('mobile-show');
+                    overlay.classList.remove('show');
+                    var icon = menuToggle.querySelector('i');
+                    icon.classList.remove('layui-icon-shrink-right');
+                    icon.classList.add('layui-icon-spread-left');
+                };
+            }
 
             // 退出登录
             document.getElementById('logoutBtn').onclick = function(){
-                layer.confirm('确定要退出登录吗？', {icon: 3, title: '提示'}, function(index){
+                layer.confirm('确定要退出登录吗？', {
+                    icon: 3,
+                    title: '提示',
+                    btn: ['确定', '取消']
+                }, function(index){
+                    var loadIndex = layer.load(1, {shade: [0.3, '#000']});
+
                     fetch('/api/auth/logout', { method: 'POST' })
                         .then(res => res.json())
                         .then(data => {
+                            layer.close(loadIndex);
                             if(data.code === 0) {
-                                window.location.href = '/login';
+                                layer.msg('退出成功', {icon: 1, time: 1000}, function() {
+                                    window.location.href = '/login';
+                                });
+                            } else {
+                                layer.msg(data.msg || '退出失败', {icon: 2});
                             }
+                        })
+                        .catch(err => {
+                            layer.close(loadIndex);
+                            layer.msg('网络错误', {icon: 2});
                         });
                     layer.close(index);
                 });

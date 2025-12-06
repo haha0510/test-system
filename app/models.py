@@ -258,33 +258,75 @@ class CrawlerConfig(db.Model):
     icon = db.Column(db.String(50))  # 图标
     color = db.Column(db.String(50))  # 主题色
 
-    # 爬虫配置
-    base_url = db.Column(db.String(500))  # 基础URL
-    search_url = db.Column(db.String(500))  # 搜索接口URL
-    crawler_class = db.Column(db.String(100))  # 爬虫类名（如 BaiduNewsCrawler）
-    crawler_module = db.Column(db.String(100))  # 爬虫模块名（如 app.crawler）
+    # =========================================
+    # 核心爬虫模板配置（固定）
+    # =========================================
+    # 爬虫引擎类型：
+    # - html_parser: HTML页面解析（beautifulsoup）
+    # - json_api: JSON API接口
+    # - jsonp_api: JSONP接口
+    crawler_type = db.Column(db.String(20), default='html_parser')  # 爬虫引擎类型
 
-    # 请求配置
-    default_headers = db.Column(db.Text)  # 默认请求头（JSON格式）
+    # 基础URL配置
+    base_url = db.Column(db.String(500))  # 基础域名（如 https://www.baidu.com）
+    search_url = db.Column(db.String(500))  # 搜索接口URL（完整路径或路径模板）
+
+    # 动态加载配置（兼容旧爬虫）
+    crawler_module = db.Column(db.String(100))  # 爬虫模块名（如 app.crawler）
+    crawler_class = db.Column(db.String(100))  # 爬虫类名（如 BaiduNewsCrawler）
+
+    # 请求方法
+    request_method = db.Column(db.String(10), default='GET')  # GET/POST
+
+    # 搜索参数模板（JSON格式）
+    # 示例: {"keyword": "{keyword}", "page": "{page}", "size": "10"}
+    search_params_template = db.Column(db.Text)
+
+    # 分页配置（JSON格式）
+    # 示例: {"type": "page_number", "param": "page", "start": 1, "step": 1}
+    # 或 {"type": "offset", "param": "pn", "start": 0, "step": 10}
+    pagination_config = db.Column(db.Text)
+
+    # 请求头配置（JSON格式）
+    default_headers = db.Column(db.Text)
+
+    # 响应解析配置（JSON格式）
+    # 包含选择器或JSON路径配置
+    parse_config = db.Column(db.Text)
+
+    # =========================================
+    # 动态生成的配置
+    # =========================================
+    # 智能分析结果缓存（JSON格式）
+    analyzed_config = db.Column(db.Text)  # 智能分析后生成的完整配置
+    is_analyzed = db.Column(db.Boolean, default=False)  # 是否已完成智能分析
+
+    # =========================================
+    # 请求策略配置
+    # =========================================
     request_delay = db.Column(db.Float, default=0.5)  # 请求间隔（秒）
     timeout = db.Column(db.Integer, default=15)  # 超时时间（秒）
     max_pages = db.Column(db.Integer, default=10)  # 最大翻页数
+    page_size = db.Column(db.Integer, default=10)  # 每页数据量
 
-    # 状态
+    # =========================================
+    # 状态管理
+    # =========================================
     status = db.Column(db.Integer, default=1)  # 1:启用 0:禁用
     is_builtin = db.Column(db.Boolean, default=False)  # 是否内置爬虫
+    is_template = db.Column(db.Boolean, default=False)  # 是否为模板（不可直接运行）
     sort_order = db.Column(db.Integer, default=0)  # 排序顺序
 
-    # 统计
+    # =========================================
+    # 统计信息
+    # =========================================
     success_count = db.Column(db.Integer, default=0)  # 成功采集次数
     fail_count = db.Column(db.Integer, default=0)  # 失败次数
     last_used_at = db.Column(db.DateTime)  # 最后使用时间
+    last_error = db.Column(db.Text)  # 最后错误信息
 
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-
-    def __repr__(self):
-        return f'<CrawlerConfig {self.name}>'
 
     def to_dict(self):
         import json
@@ -295,6 +337,34 @@ class CrawlerConfig(db.Model):
             except:
                 headers = {}
 
+        search_params = {}
+        if self.search_params_template:
+            try:
+                search_params = json.loads(self.search_params_template)
+            except:
+                search_params = {}
+
+        parse_config = {}
+        if self.parse_config:
+            try:
+                parse_config = json.loads(self.parse_config)
+            except:
+                parse_config = {}
+
+        pagination = {}
+        if self.pagination_config:
+            try:
+                pagination = json.loads(self.pagination_config)
+            except:
+                pagination = {}
+
+        analyzed = {}
+        if self.analyzed_config:
+            try:
+                analyzed = json.loads(self.analyzed_config)
+            except:
+                analyzed = {}
+
         return {
             'id': self.id,
             'name': self.name,
@@ -302,23 +372,39 @@ class CrawlerConfig(db.Model):
             'description': self.description,
             'icon': self.icon or 'layui-icon-website',
             'color': self.color or '#667eea',
+            'crawler_type': self.crawler_type,
             'base_url': self.base_url,
             'search_url': self.search_url,
-            'crawler_class': self.crawler_class,
-            'crawler_module': self.crawler_module,
+            'crawler_module': self.crawler_module,  # 兼容旧爬虫
+            'crawler_class': self.crawler_class,    # 兼容旧爬虫
+            'request_method': self.request_method,
+            'search_params_template': search_params,
+            'search_params_template_str': self.search_params_template or '',
+            'parse_config': parse_config,
+            'parse_config_str': self.parse_config or '',
+            'pagination_config': pagination,
+            'pagination_config_str': self.pagination_config or '',
             'default_headers': headers,
             'default_headers_str': self.default_headers or '',
+            'analyzed_config': analyzed,
+            'analyzed_config_str': self.analyzed_config or '',
+            'is_analyzed': self.is_analyzed,
+            'is_template': self.is_template,
             'request_delay': self.request_delay,
             'timeout': self.timeout,
             'max_pages': self.max_pages,
+            'page_size': self.page_size,
             'status': self.status,
             'status_name': '启用' if self.status == 1 else '禁用',
             'is_builtin': self.is_builtin,
             'sort_order': self.sort_order,
             'success_count': self.success_count,
             'fail_count': self.fail_count,
-            'success_rate': f"{self.success_count / (self.success_count + self.fail_count) * 100:.1f}%" if (self.success_count + self.fail_count) > 0 else '-',
             'last_used_at': self.last_used_at.strftime('%Y-%m-%d %H:%M:%S') if self.last_used_at else '-',
+            'last_error': self.last_error,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S')
         }
+
+    def __repr__(self):
+        return f'<CrawlerConfig {self.name}>'
