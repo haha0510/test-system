@@ -574,6 +574,13 @@
                         <span>仪表盘</span>
                     </a>
                 </li>
+                <li class="layui-nav-item {% if request.endpoint == 'main.data_screen' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.data_screen') }}">
+                        <i class="layui-icon layui-icon-chart-screen nav-icon"></i>
+                        <span>数据大屏</span>
+                        <span class="nav-badge new">NEW</span>
+                    </a>
+                </li>
                 <li class="layui-nav-item {% if request.endpoint == 'main.data_collect' %}layui-this{% endif %}">
                     <a href="{{ url_for('main.data_collect') }}">
                         <i class="layui-icon layui-icon-download-circle nav-icon"></i>
@@ -604,6 +611,12 @@
                     <a href="{{ url_for('main.ai_engines') }}">
                         <i class="layui-icon layui-icon-auz nav-icon"></i>
                         <span>AI引擎配置</span>
+                    </a>
+                </li>
+                <li class="layui-nav-item {% if request.endpoint == 'main.report_management' %}layui-this{% endif %}">
+                    <a href="{{ url_for('main.report_management') }}">
+                        <i class="layui-icon layui-icon-file nav-icon"></i>
+                        <span>报告管理</span>
                     </a>
                 </li>
             </ul>

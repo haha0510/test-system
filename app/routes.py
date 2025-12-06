@@ -2,6 +2,7 @@
 """路由定义"""
 from functools import wraps
 from datetime import datetime
+import random
 from flask import Blueprint, render_template, jsonify, request, session, redirect, url_for
 from app import db
 from app.models import User, SystemConfig, CollectedNews, CrawlRule, AIEngine
@@ -63,6 +64,13 @@ def login():
 def dashboard():
     """后台仪表盘"""
     return render_template('admin/dashboard.html')
+
+
+@main_bp.route('/admin/data-screen')
+@login_required
+def data_screen():
+    """数据大屏"""
+    return render_template('admin/data_screen.html')
 
 
 @main_bp.route('/admin/news')
@@ -529,6 +537,7 @@ def api_save_news():
     保存单条采集数据到数据库（自动进行深度采集）
     """
     from app.deep_crawler import RuleBasedCrawler
+    from app.geo_extractor import extract_regions
 
     data = request.get_json() or {}
 
@@ -551,20 +560,29 @@ def api_save_news():
         crawler = RuleBasedCrawler(db)
         deep_result = crawler.deep_collect(url, source)
 
+        # 提取地理信息
+        final_title = deep_result.get('title') or title
+        final_content = deep_result.get('content') or data.get('content', '')
+        geo_info = extract_regions(f"{final_title} {final_content}")
+
         # 创建新闻记录
         news = CollectedNews(
-            title=deep_result.get('title') or title,  # 优先使用深度采集的标题
+            title=final_title,  # 优先使用深度采集的标题
             summary=data.get('summary', ''),
             cover=data.get('cover', ''),
             url=url,
             source=source,
             keyword=data.get('keyword', ''),
-            content=deep_result.get('content') or data.get('content', ''),
+            content=final_content,
             publish_time=deep_result.get('publish_time') or data.get('publish_time', ''),
             author=deep_result.get('author') or data.get('author', ''),
             deep_collected=deep_result.get('success', False),
             deep_collected_at=datetime.now() if deep_result.get('success') else None,
             rule_used=deep_result.get('rule_used') if deep_result.get('success') else None,
+            province=geo_info.get('province') if geo_info else None,
+            city=geo_info.get('city') if geo_info else None,
+            region_level=geo_info.get('region_level') if geo_info else None,
+            geo_extracted_at=datetime.now() if geo_info else None,
             collected_by=session.get('user_id')
         )
         db.session.add(news)
@@ -575,6 +593,8 @@ def api_save_news():
             msg += f'（已深度采集，规则：{deep_result.get("rule_used", "通用")}）'
         else:
             msg += '（深度采集失败，已保存基础信息）'
+        if geo_info:
+            msg += f'（地区：{geo_info.get("province", "")} {geo_info.get("city", "")}）'
 
         return jsonify({'code': 0, 'msg': msg, 'data': news.to_dict()})
     except Exception as e:
@@ -590,6 +610,7 @@ def api_save_news_batch():
     请求参数: { items: [...] }
     """
     from app.deep_crawler import RuleBasedCrawler
+    from app.geo_extractor import extract_regions
     import time
 
     data = request.get_json() or {}
@@ -623,19 +644,28 @@ def api_save_news_batch():
             # 进行深度采集
             deep_result = crawler.deep_collect(url, source)
 
+            # 提取地理信息
+            final_title = deep_result.get('title') or title
+            final_content = deep_result.get('content') or item.get('content', '')
+            geo_info = extract_regions(f"{final_title} {final_content}")
+
             news = CollectedNews(
-                title=deep_result.get('title') or title,
+                title=final_title,
                 summary=item.get('summary', ''),
                 cover=item.get('cover', ''),
                 url=url,
                 source=source,
                 keyword=item.get('keyword', ''),
-                content=deep_result.get('content') or item.get('content', ''),
+                content=final_content,
                 publish_time=deep_result.get('publish_time') or item.get('publish_time', ''),
                 author=deep_result.get('author') or item.get('author', ''),
                 deep_collected=deep_result.get('success', False),
                 deep_collected_at=datetime.now() if deep_result.get('success') else None,
                 rule_used=deep_result.get('rule_used') if deep_result.get('success') else None,
+                province=geo_info.get('province') if geo_info else None,
+                city=geo_info.get('city') if geo_info else None,
+                region_level=geo_info.get('region_level') if geo_info else None,
+                geo_extracted_at=datetime.now() if geo_info else None,
                 collected_by=session.get('user_id')
             )
             db.session.add(news)
@@ -949,6 +979,7 @@ def api_warehouse_ai_analyze():
 
     def generate():
         """SSE生成器函数"""
+        full_content = ''  # 收集完整的分析内容
         try:
             # 发送开始事件
             yield f"data: {json.dumps({'type': 'start', 'news_count': len(news_list), 'engine': engine.name}, ensure_ascii=False)}\n\n"
@@ -995,8 +1026,40 @@ def api_warehouse_ai_analyze():
                         chunk_data = line_str[6:]  # 移除 'data: ' 前缀
 
                         if chunk_data == '[DONE]':
-                            # 发送完成事件
-                            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                            # 分析完成,自动创建报告
+                            report_id = None
+                            try:
+                                from app.models import AIReport
+                                import re
+
+                                # 计算字数(去除Markdown标记)
+                                clean_content = re.sub(r'[#*`\[\]()_~>-]', '', full_content)
+                                word_count = len(clean_content.strip())
+
+                                # 生成报告标题
+                                title = f'舆情数据分析报告({len(news_list)}条)'
+
+                                # 创建报告
+                                report = AIReport(
+                                    title=title,
+                                    content=full_content,
+                                    industry='舆情监测',
+                                    summary=f'基于{len(news_list)}条新闻数据的AI智能分析报告',
+                                    query_sql=f'SELECT * FROM collected_news WHERE id IN ({",".join(map(str, news_ids))})',
+                                    data_snapshot=json.dumps({'news_ids': news_ids, 'news_count': len(news_list)}, ensure_ascii=False),
+                                    ai_engine_id=engine.id,
+                                    word_count=word_count,
+                                    created_by=session.get('user_id')
+                                )
+
+                                db.session.add(report)
+                                db.session.commit()
+                                report_id = report.id
+                            except Exception as e:
+                                print(f"自动创建报告失败: {str(e)}")
+
+                            # 发送完成事件,包含report_id
+                            yield f"data: {json.dumps({'type': 'done', 'report_id': report_id}, ensure_ascii=False)}\n\n"
                             break
 
                         try:
@@ -1006,6 +1069,7 @@ def api_warehouse_ai_analyze():
                                 delta = chunk_json['choices'][0].get('delta', {})
                                 content = delta.get('content', '')
                                 if content:
+                                    full_content += content  # 收集完整内容
                                     # 发送内容块
                                     yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
                         except json.JSONDecodeError:
@@ -2303,6 +2367,516 @@ def api_ai_engines_test():
         return jsonify({'code': 1, 'msg': f'测试失败: {str(e)[:100]}'})
 
 
+# ============ 报告管理 ============
+
+@main_bp.route('/admin/report-management')
+@login_required
+def report_management():
+    """报告管理页面"""
+    return render_template('admin/report_management.html')
+
+
+@main_bp.route('/api/reports/list', methods=['GET'])
+@login_required
+def get_reports_list():
+    """获取报告列表(支持筛选和分页)"""
+    try:
+        from app.models import AIReport
+
+        # 获取筛选参数
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 10, type=int)
+        industry = request.args.get('industry', '')
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        keyword = request.args.get('keyword', '')  # 标题关键词搜索
+
+        # 构建查询
+        query = AIReport.query
+
+        # 行业筛选
+        if industry:
+            query = query.filter(AIReport.industry == industry)
+
+        # 时间筛选
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d')
+                query = query.filter(AIReport.created_at >= start)
+            except:
+                pass
+
+        if end_date:
+            try:
+                end = datetime.strptime(end_date + ' 23:59:59', '%Y-%m-%d %H:%M:%S')
+                query = query.filter(AIReport.created_at <= end)
+            except:
+                pass
+
+        # 关键词搜索
+        if keyword:
+            query = query.filter(AIReport.title.like(f'%{keyword}%'))
+
+        # 按创建时间倒序
+        query = query.order_by(AIReport.created_at.desc())
+
+        # 分页
+        total = query.count()
+        reports = query.offset((page - 1) * limit).limit(limit).all()
+
+        return jsonify({
+            'code': 0,
+            'msg': 'success',
+            'count': total,
+            'data': [r.to_dict() for r in reports]
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取报告列表失败: {str(e)}'})
+
+
+@main_bp.route('/api/reports/<int:report_id>', methods=['GET'])
+@login_required
+def get_report_detail(report_id):
+    """获取报告详情"""
+    try:
+        from app.models import AIReport
+
+        report = AIReport.query.get(report_id)
+        if not report:
+            return jsonify({'code': 1, 'msg': '报告不存在'})
+
+        # 增加查看次数
+        report.view_count += 1
+        db.session.commit()
+
+        return jsonify({
+            'code': 0,
+            'msg': 'success',
+            'data': report.to_dict()
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取报告详情失败: {str(e)}'})
+
+
+@main_bp.route('/api/reports/save', methods=['POST'])
+@login_required
+def save_report():
+    """保存AI生成的报告"""
+    try:
+        from app.models import AIReport
+        import json
+
+        data = request.get_json()
+
+        # 必填字段验证
+        if not data.get('title') or not data.get('content'):
+            return jsonify({'code': 1, 'msg': '标题和内容不能为空'})
+
+        # 计算字数(去除Markdown标记)
+        import re
+        clean_content = re.sub(r'[#*`\[\]()_~>-]', '', data.get('content', ''))
+        word_count = len(clean_content.strip())
+
+        # 创建报告
+        report = AIReport(
+            title=data.get('title'),
+            content=data.get('content'),
+            industry=data.get('industry', ''),
+            summary=data.get('summary', ''),
+            query_sql=data.get('query_sql', ''),
+            data_snapshot=json.dumps(data.get('data_snapshot', {}), ensure_ascii=False) if data.get('data_snapshot') else None,
+            ai_engine_id=data.get('ai_engine_id'),
+            word_count=word_count,
+            created_by=session.get('user_id')
+        )
+
+        db.session.add(report)
+        db.session.commit()
+
+        return jsonify({
+            'code': 0,
+            'msg': '报告保存成功',
+            'data': {'report_id': report.id}
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'保存报告失败: {str(e)}'})
+
+
+@main_bp.route('/api/reports/delete', methods=['POST'])
+@login_required
+def delete_report():
+    """删除报告"""
+    try:
+        from app.models import AIReport
+
+        data = request.get_json()
+        report_id = data.get('id')
+
+        if not report_id:
+            return jsonify({'code': 1, 'msg': '报告ID不能为空'})
+
+        report = AIReport.query.get(report_id)
+        if not report:
+            return jsonify({'code': 1, 'msg': '报告不存在'})
+
+        # 权限检查:只有创建人或管理员可以删除
+        if report.created_by != session.get('user_id') and session.get('role') != 'admin':
+            return jsonify({'code': 1, 'msg': '无权限删除此报告'})
+
+        db.session.delete(report)
+        db.session.commit()
+
+        return jsonify({'code': 0, 'msg': '删除成功'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'code': 1, 'msg': f'删除失败: {str(e)}'})
+
+
+@main_bp.route('/api/reports/<int:report_id>/download', methods=['GET'])
+@login_required
+def download_report_pdf(report_id):
+    """下载报告(支持PDF/HTML/Markdown格式)"""
+    try:
+        from app.models import AIReport
+        from flask import send_file
+        import markdown
+        import io
+
+        report = AIReport.query.get(report_id)
+        if not report:
+            return jsonify({'code': 1, 'msg': '报告不存在'})
+
+        # 获取下载格式参数
+        format_type = request.args.get('format', 'pdf').lower()
+
+        # 增加下载次数
+        report.download_count += 1
+        db.session.commit()
+
+        # 文件名（不含扩展名）
+        base_filename = f'{report.title}_{report.created_at.strftime("%Y%m%d")}'
+
+        # Markdown格式下载
+        if format_type == 'md' or format_type == 'markdown':
+            md_buffer = io.BytesIO()
+            md_content = f'# {report.title}\n\n'
+            md_content += f'**行业分类:** {report.industry or "未分类"}\n\n'
+            md_content += f'**生成时间:** {report.created_at.strftime("%Y-%m-%d %H:%M:%S")}\n\n'
+            md_content += f'**创建人:** {report.creator.username if report.creator else "-"}\n\n'
+            md_content += '---\n\n'
+            md_content += report.content
+            md_buffer.write(md_content.encode('utf-8'))
+            md_buffer.seek(0)
+
+            return send_file(
+                md_buffer,
+                mimetype='text/markdown',
+                as_attachment=True,
+                download_name=f'{base_filename}.md'
+            )
+
+        # 将Markdown转换为HTML
+        md_html = markdown.markdown(
+            report.content,
+            extensions=['extra', 'codehilite', 'tables', 'fenced_code']
+        )
+
+        # 构建完整HTML
+        html_content = f'''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{report.title}</title>
+    <style>
+        body {{
+            font-family: "Microsoft YaHei", "SimSun", sans-serif;
+            line-height: 1.8;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 60px;
+        }}
+        h1 {{
+            color: #0071e3;
+            border-bottom: 3px solid #0071e3;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }}
+        h2 {{
+            color: #1d1d1f;
+            margin-top: 30px;
+            border-left: 4px solid #0071e3;
+            padding-left: 15px;
+        }}
+        h3 {{
+            color: #333;
+            margin-top: 20px;
+        }}
+        p {{
+            margin: 15px 0;
+            text-align: justify;
+        }}
+        code {{
+            background: #f5f5f7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "Courier New", monospace;
+            font-size: 0.9em;
+        }}
+        pre {{
+            background: #f5f5f7;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }}
+        pre code {{
+            background: none;
+            padding: 0;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }}
+        table th, table td {{
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }}
+        table th {{
+            background: #f5f5f7;
+            font-weight: bold;
+        }}
+        .report-meta {{
+            background: #f5f5f7;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            font-size: 14px;
+            color: #666;
+        }}
+        .report-meta div {{
+            margin: 5px 0;
+        }}
+        blockquote {{
+            border-left: 4px solid #0071e3;
+            margin: 20px 0;
+            padding-left: 20px;
+            color: #666;
+            font-style: italic;
+        }}
+    </style>
+</head>
+<body>
+    <h1>{report.title}</h1>
+    <div class="report-meta">
+        <div><strong>行业分类:</strong> {report.industry or '未分类'}</div>
+        <div><strong>生成时间:</strong> {report.created_at.strftime('%Y-%m-%d %H:%M:%S')}</div>
+        <div><strong>创建人:</strong> {report.creator.username if report.creator else '-'}</div>
+        <div><strong>字数:</strong> {report.word_count} 字</div>
+    </div>
+    {md_html}
+</body>
+</html>
+        '''
+
+        # HTML格式下载
+        if format_type == 'html':
+            html_buffer = io.BytesIO()
+            html_buffer.write(html_content.encode('utf-8'))
+            html_buffer.seek(0)
+
+            return send_file(
+                html_buffer,
+                mimetype='text/html',
+                as_attachment=True,
+                download_name=f'{base_filename}.html'
+            )
+
+        # PDF格式下载（默认）- 使用reportlab生成
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib import colors
+            from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            import re
+
+            pdf_buffer = io.BytesIO()
+
+            # 注册中文字体（使用Windows系统自带的宋体）
+            try:
+                pdfmetrics.registerFont(TTFont('SimSun', 'C:\\Windows\\Fonts\\simsun.ttc'))
+                chinese_font = 'SimSun'
+            except:
+                try:
+                    pdfmetrics.registerFont(TTFont('SimHei', 'C:\\Windows\\Fonts\\simhei.ttf'))
+                    chinese_font = 'SimHei'
+                except:
+                    chinese_font = 'Helvetica'  # 如果都失败，使用默认字体
+
+            # 创建PDF文档
+            doc = SimpleDocTemplate(
+                pdf_buffer,
+                pagesize=A4,
+                rightMargin=72,
+                leftMargin=72,
+                topMargin=72,
+                bottomMargin=72
+            )
+
+            # 定义样式
+            styles = getSampleStyleSheet()
+
+            # 标题样式
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontName=chinese_font,
+                fontSize=24,
+                textColor=colors.HexColor('#0071e3'),
+                spaceAfter=30,
+                alignment=TA_CENTER
+            )
+
+            # 元信息样式
+            meta_style = ParagraphStyle(
+                'MetaStyle',
+                parent=styles['Normal'],
+                fontName=chinese_font,
+                fontSize=10,
+                textColor=colors.grey,
+                spaceAfter=6
+            )
+
+            # 标题2样式
+            heading2_style = ParagraphStyle(
+                'CustomHeading2',
+                parent=styles['Heading2'],
+                fontName=chinese_font,
+                fontSize=16,
+                textColor=colors.HexColor('#1d1d1f'),
+                spaceBefore=20,
+                spaceAfter=12
+            )
+
+            # 标题3样式
+            heading3_style = ParagraphStyle(
+                'CustomHeading3',
+                parent=styles['Heading3'],
+                fontName=chinese_font,
+                fontSize=14,
+                spaceBefore=15,
+                spaceAfter=10
+            )
+
+            # 正文样式
+            body_style = ParagraphStyle(
+                'CustomBody',
+                parent=styles['Normal'],
+                fontName=chinese_font,
+                fontSize=11,
+                leading=20,
+                alignment=TA_JUSTIFY,
+                spaceAfter=12
+            )
+
+            # 构建PDF内容
+            story = []
+
+            # 添加标题
+            story.append(Paragraph(report.title, title_style))
+            story.append(Spacer(1, 0.2*inch))
+
+            # 添加元信息
+            story.append(Paragraph(f'<b>行业分类:</b> {report.industry or "未分类"}', meta_style))
+            story.append(Paragraph(f'<b>生成时间:</b> {report.created_at.strftime("%Y-%m-%d %H:%M:%S")}', meta_style))
+            story.append(Paragraph(f'<b>创建人:</b> {report.creator.username if report.creator else "-"}', meta_style))
+            story.append(Paragraph(f'<b>字数:</b> {report.word_count} 字', meta_style))
+            story.append(Spacer(1, 0.3*inch))
+
+            # 处理Markdown内容
+            content_lines = report.content.split('\n')
+            for line in content_lines:
+                line = line.strip()
+                if not line:
+                    story.append(Spacer(1, 0.1*inch))
+                    continue
+
+                # 处理标题
+                if line.startswith('### '):
+                    story.append(Paragraph(line[4:], heading3_style))
+                elif line.startswith('## '):
+                    story.append(Paragraph(line[3:], heading2_style))
+                elif line.startswith('# '):
+                    story.append(Paragraph(line[2:], heading2_style))
+                # 处理列表
+                elif line.startswith('- ') or line.startswith('* '):
+                    story.append(Paragraph('• ' + line[2:], body_style))
+                elif re.match(r'^\d+\.\s', line):
+                    story.append(Paragraph(line, body_style))
+                # 处理普通段落
+                else:
+                    # 简单处理粗体和斜体标记
+                    line = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', line)
+                    line = re.sub(r'\*(.+?)\*', r'<i>\1</i>', line)
+                    # 转义特殊字符
+                    line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    # 恢复已处理的标签
+                    line = line.replace('&lt;b&gt;', '<b>').replace('&lt;/b&gt;', '</b>')
+                    line = line.replace('&lt;i&gt;', '<i>').replace('&lt;/i&gt;', '</i>')
+                    story.append(Paragraph(line, body_style))
+
+            # 生成PDF
+            doc.build(story)
+            pdf_buffer.seek(0)
+
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'{base_filename}.pdf'
+            )
+        except Exception as e:
+            # PDF生成错误，返回详细错误信息便于调试
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f'PDF生成错误详情:\n{error_detail}')  # 输出到控制台便于调试
+            return jsonify({
+                'code': 1,
+                'msg': f'PDF生成失败: {str(e)}',
+                'suggestion': '请尝试下载HTML或Markdown格式'
+            })
+
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'下载失败: {str(e)}'})
+
+
+@main_bp.route('/api/reports/industries', methods=['GET'])
+@login_required
+def get_report_industries():
+    """获取所有行业分类(用于筛选)"""
+    try:
+        from app.models import AIReport
+
+        # 查询所有不重复的行业
+        industries = db.session.query(AIReport.industry).distinct().filter(AIReport.industry.isnot(None), AIReport.industry != '').all()
+        industry_list = [i[0] for i in industries if i[0]]
+
+        return jsonify({
+            'code': 0,
+            'msg': 'success',
+            'data': industry_list
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取行业列表失败: {str(e)}'})
+
+
 # ============ 爬虫管理 ============
 
 @main_bp.route('/admin/crawlers')
@@ -3073,409 +3647,139 @@ def ai_data_analysis():
     return render_template('admin/ai_data_analysis.html')
 
 
-# AI数据分析工具定义
-AI_DATA_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_table_list",
-            "description": "获取数据库中所有表的列表，用于了解数据库有哪些数据表",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_table_schema",
-            "description": "获取指定表的结构信息，包括列名、数据类型、是否为主键等，以及表中的数据行数",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "table_name": {
-                        "type": "string",
-                        "description": "要查询的表名"
-                    }
-                },
-                "required": ["table_name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "execute_sql_query",
-            "description": "执行SQL查询语句（仅支持SELECT），用于查询和分析数据。注意：只能执行SELECT查询，不能执行增删改操作",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "sql": {
-                        "type": "string",
-                        "description": "要执行的SQL SELECT语句"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "最大返回行数，默认100",
-                        "default": 100
-                    }
-                },
-                "required": ["sql"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_data_statistics",
-            "description": "获取表或指定列的统计信息，如行数、非空值数量、唯一值数量、最大最小值等",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "table_name": {
-                        "type": "string",
-                        "description": "要统计的表名"
-                    },
-                    "column_name": {
-                        "type": "string",
-                        "description": "要统计的列名（可选），如果不指定则只统计表的行数"
-                    }
-                },
-                "required": ["table_name"]
-            }
-        }
-    }
-]
+# ============ 数据大屏 API ============
 
-
-def get_database_path():
-    """获取数据库路径"""
-    import os
-    return os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance', 'app.db')
-
-
-def tool_get_table_list():
-    """获取数据库中所有表的列表"""
-    import sqlite3
-    db_path = get_database_path()
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return {"tables": tables}
-
-
-def tool_get_table_schema(table_name: str):
-    """获取指定表的结构信息"""
-    import sqlite3
-    db_path = get_database_path()
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # 检查表是否存在
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
-    if not cursor.fetchone():
-        conn.close()
-        return {"error": f"表 '{table_name}' 不存在"}
-
-    # 获取表结构
-    cursor.execute(f"PRAGMA table_info({table_name})")
-    columns = []
-    for row in cursor.fetchall():
-        columns.append({
-            "cid": row[0],
-            "name": row[1],
-            "type": row[2],
-            "notnull": row[3],
-            "default": row[4],
-            "pk": row[5]
-        })
-
-    # 获取行数
-    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-    row_count = cursor.fetchone()[0]
-
-    conn.close()
-    return {
-        "table_name": table_name,
-        "columns": columns,
-        "row_count": row_count
-    }
-
-
-def tool_execute_sql_query(sql: str, limit: int = 100):
-    """执行只读SQL查询"""
-    import sqlite3
-    db_path = get_database_path()
-
-    # 安全检查：只允许SELECT语句
-    sql_upper = sql.strip().upper()
-    if not sql_upper.startswith('SELECT'):
-        return {"error": "只允许执行SELECT查询语句，不支持增删改操作"}
-
-    # 禁止危险操作
-    dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
-    for keyword in dangerous_keywords:
-        if keyword in sql_upper:
-            return {"error": f"SQL语句包含不允许的操作: {keyword}"}
-
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        # 添加LIMIT限制
-        if 'LIMIT' not in sql_upper:
-            sql = f"{sql.rstrip(';')} LIMIT {limit}"
-
-        cursor.execute(sql)
-        rows = cursor.fetchall()
-
-        result = [dict(row) for row in rows]
-        column_names = [description[0] for description in cursor.description] if cursor.description else []
-
-        conn.close()
-        return {
-            "columns": column_names,
-            "data": result,
-            "row_count": len(result),
-            "sql": sql
-        }
-    except Exception as e:
-        return {"error": f"SQL执行错误: {str(e)}"}
-
-
-def tool_get_data_statistics(table_name: str, column_name: str = None):
-    """获取表或列的统计信息"""
-    import sqlite3
-    db_path = get_database_path()
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # 检查表是否存在
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
-    if not cursor.fetchone():
-        conn.close()
-        return {"error": f"表 '{table_name}' 不存在"}
-
-    stats = {"table_name": table_name}
-
-    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-    stats["total_rows"] = cursor.fetchone()[0]
-
-    if column_name:
-        try:
-            cursor.execute(f"SELECT COUNT({column_name}) FROM {table_name} WHERE {column_name} IS NOT NULL")
-            stats["non_null_count"] = cursor.fetchone()[0]
-
-            cursor.execute(f"SELECT COUNT(DISTINCT {column_name}) FROM {table_name}")
-            stats["distinct_count"] = cursor.fetchone()[0]
-
-            try:
-                cursor.execute(f"SELECT MIN({column_name}), MAX({column_name}), AVG({column_name}) FROM {table_name}")
-                row = cursor.fetchone()
-                stats["min"] = row[0]
-                stats["max"] = row[1]
-                stats["avg"] = row[2]
-            except:
-                pass
-        except Exception as e:
-            stats["column_error"] = str(e)
-
-    conn.close()
-    return stats
-
-
-def execute_ai_tool(tool_name: str, arguments: dict):
-    """执行AI工具调用"""
-    tool_functions = {
-        "get_table_list": tool_get_table_list,
-        "get_table_schema": tool_get_table_schema,
-        "execute_sql_query": tool_execute_sql_query,
-        "get_data_statistics": tool_get_data_statistics
-    }
-
-    if tool_name not in tool_functions:
-        return {"error": f"未知的工具: {tool_name}"}
-
-    try:
-        return tool_functions[tool_name](**arguments)
-    except Exception as e:
-        return {"error": f"工具执行失败: {str(e)}"}
-
-
-@main_bp.route('/api/ai-data-analysis/tables', methods=['GET'])
+@main_bp.route('/api/datav/overview')
 @login_required
-def api_ai_data_tables():
-    """获取数据库表信息"""
-    result = tool_get_table_list()
-    tables_info = []
+def api_datav_overview():
+    """获取数据大屏概况"""
+    try:
+        from sqlalchemy import func
+        from datetime import date
 
-    for table_name in result.get('tables', []):
-        schema = tool_get_table_schema(table_name)
-        tables_info.append({
-            'name': table_name,
-            'columns': len(schema.get('columns', [])),
-            'rows': schema.get('row_count', 0)
+        # 总数据量
+        total_count = CollectedNews.query.count()
+
+        # 数据源数量
+        source_count = db.session.query(func.count(func.distinct(CollectedNews.source))).scalar() or 0
+
+        # 深度采集统计
+        deep_collected = CollectedNews.query.filter_by(deep_collected=True).count()
+        deep_rate = round((deep_collected / total_count * 100) if total_count > 0 else 0, 1)
+
+        # 今日新增
+        today = date.today()
+        today_count = CollectedNews.query.filter(
+            func.date(CollectedNews.created_at) == today
+        ).count()
+
+        return jsonify({
+            'code': 0,
+            'data': {
+                'total_count': total_count,
+                'source_count': source_count,
+                'deep_rate': deep_rate,
+                'today_count': today_count
+            }
         })
-
-    return jsonify({
-        'code': 0,
-        'data': tables_info
-    })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取数据概况失败: {str(e)}'})
 
 
-@main_bp.route('/api/ai-data-analysis/chat', methods=['POST'])
+@main_bp.route('/api/datav/source-distribution')
 @login_required
-def api_ai_data_analysis_chat():
-    """AI数据分析对话接口（支持工具调用）"""
-    import requests as http_requests
-    import json
+def api_datav_source_distribution():
+    """获取数据来源分布"""
+    try:
+        from sqlalchemy import func
 
-    data = request.get_json() or {}
-    message = data.get('message', '').strip()
-    engine_id = data.get('engine_id')
-    history = data.get('history', [])
+        # 按来源统计数量
+        results = db.session.query(
+            CollectedNews.source,
+            func.count(CollectedNews.id).label('count')
+        ).filter(
+            CollectedNews.source.isnot(None),
+            CollectedNews.source != ''
+        ).group_by(CollectedNews.source).order_by(func.count(CollectedNews.id).desc()).limit(10).all()
 
-    if not message:
-        return jsonify({'code': 1, 'msg': '请输入消息内容'})
+        data = [{'source': row.source, 'count': row.count} for row in results]
 
-    # 获取AI引擎
-    if engine_id:
-        engine = AIEngine.query.get(engine_id)
-    else:
-        engine = AIEngine.query.filter_by(is_default=True, status=1).first()
-        if not engine:
-            engine = AIEngine.query.filter_by(status=1).first()
+        return jsonify({
+            'code': 0,
+            'data': data
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取来源分布失败: {str(e)}'})
 
-    if not engine:
-        return jsonify({'code': 1, 'msg': '没有可用的AI引擎，请先配置AI引擎'})
 
-    if engine.status != 1:
-        return jsonify({'code': 1, 'msg': '该AI引擎已禁用'})
+@main_bp.route('/api/datav/collection-trend')
+@login_required
+def api_datav_collection_trend():
+    """获取采集趋势"""
+    try:
+        from sqlalchemy import func
+        from datetime import datetime, timedelta
 
-    # 构建系统提示
-    system_prompt = """你是一个专业的数据分析助手，负责帮助用户分析和理解SQLite数据库中的数据。
+        days = request.args.get('days', 30, type=int)
 
-你有以下工具可以使用：
-1. get_table_list - 获取数据库中所有表的列表
-2. get_table_schema - 获取指定表的结构信息
-3. execute_sql_query - 执行SQL查询（仅支持SELECT）
-4. get_data_statistics - 获取表或列的统计信息
+        # 计算日期范围
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days-1)
 
-请根据用户的问题，主动使用这些工具来获取信息，然后给出专业的分析结果。
-回复时请使用中文，格式清晰易读。对于数据分析结果，可以使用markdown表格来展示数据。"""
+        # 按日期统计
+        results = db.session.query(
+            func.date(CollectedNews.created_at).label('date'),
+            func.count(CollectedNews.id).label('count')
+        ).filter(
+            func.date(CollectedNews.created_at) >= start_date,
+            func.date(CollectedNews.created_at) <= end_date
+        ).group_by(func.date(CollectedNews.created_at)).order_by('date').all()
 
-    # 构建消息
-    messages = [{'role': 'system', 'content': system_prompt}]
-    for h in history[-10:]:
-        messages.append({'role': h.get('role', 'user'), 'content': h.get('content', '')})
-    messages.append({'role': 'user', 'content': message})
+        # 填充缺失日期
+        date_dict = {row.date.strftime('%Y-%m-%d'): row.count for row in results}
 
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {engine.api_key}'
-    }
+        data = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime('%Y-%m-%d')
+            data.append({
+                'date': date_str,
+                'count': date_dict.get(date_str, 0)
+            })
+            current_date += timedelta(days=1)
 
-    # 工具调用循环
-    max_iterations = 10
-    tool_calls_log = []
+        return jsonify({
+            'code': 0,
+            'data': data
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取采集趋势失败: {str(e)}'})
 
-    for iteration in range(max_iterations):
-        payload = {
-            'model': engine.model_name,
-            'messages': messages,
-            'max_tokens': engine.max_tokens,
-            'temperature': 0.1,
-            'tools': AI_DATA_TOOLS,
-            'tool_choice': 'auto'
-        }
 
-        try:
-            response = http_requests.post(
-                engine.api_url,
-                headers=headers,
-                json=payload,
-                timeout=120
-            )
+@main_bp.route('/api/datav/geo-distribution')
+@login_required
+def api_datav_geo_distribution():
+    """获取地理分布"""
+    try:
+        from sqlalchemy import func
 
-            if response.status_code != 200:
-                error_msg = f'AI服务响应错误 (HTTP {response.status_code})'
-                try:
-                    error_data = response.json()
-                    if 'error' in error_data:
-                        error_obj = error_data['error']
-                        if isinstance(error_obj, dict):
-                            error_msg = error_obj.get('message', error_msg)
-                        else:
-                            error_msg = str(error_obj)
-                except:
-                    pass
-                return jsonify({'code': 1, 'msg': error_msg})
+        # 按省份统计
+        results = db.session.query(
+            CollectedNews.province,
+            func.count(CollectedNews.id).label('count')
+        ).filter(
+            CollectedNews.province.isnot(None),
+            CollectedNews.province != ''
+        ).group_by(CollectedNews.province).order_by(func.count(CollectedNews.id).desc()).all()
 
-            result = response.json()
+        data = [{'province': row.province, 'count': row.count} for row in results]
 
-            if 'choices' not in result or len(result['choices']) == 0:
-                return jsonify({'code': 1, 'msg': 'AI返回格式错误'})
-
-            choice = result['choices'][0]
-            ai_message = choice.get('message', {})
-            tool_calls = ai_message.get('tool_calls', [])
-
-            if tool_calls:
-                # 有工具调用
-                messages.append(ai_message)
-
-                for tool_call in tool_calls:
-                    tool_id = tool_call.get('id', '')
-                    function = tool_call.get('function', {})
-                    tool_name = function.get('name', '')
-                    arguments_str = function.get('arguments', '{}')
-
-                    try:
-                        arguments = json.loads(arguments_str)
-                    except:
-                        arguments = {}
-
-                    # 执行工具
-                    tool_result = execute_ai_tool(tool_name, arguments)
-                    tool_calls_log.append({
-                        'tool': tool_name,
-                        'args': arguments,
-                        'result_preview': str(tool_result)[:200]
-                    })
-
-                    messages.append({
-                        'role': 'tool',
-                        'tool_call_id': tool_id,
-                        'content': json.dumps(tool_result, ensure_ascii=False)
-                    })
-
-                continue
-            else:
-                # 没有工具调用，返回最终回复
-                content = ai_message.get('content', '')
-                return jsonify({
-                    'code': 0,
-                    'data': {
-                        'reply': content,
-                        'engine': engine.name,
-                        'model': result.get('model', engine.model_name),
-                        'tool_calls': tool_calls_log
-                    }
-                })
-
-        except http_requests.Timeout:
-            return jsonify({'code': 1, 'msg': 'AI响应超时，请稍后重试'})
-        except http_requests.RequestException as e:
-            return jsonify({'code': 1, 'msg': f'网络错误: {str(e)[:100]}'})
-        except Exception as e:
-            return jsonify({'code': 1, 'msg': f'请求失败: {str(e)[:100]}'})
-
-    return jsonify({'code': 1, 'msg': '达到最大迭代次数'})
+        return jsonify({
+            'code': 0,
+            'data': data
+        })
+    except Exception as e:
+        return jsonify({'code': 1, 'msg': f'获取地理分布失败: {str(e)}'})
 
 
 

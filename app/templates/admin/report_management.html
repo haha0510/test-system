@@ -1,0 +1,630 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}报告管理{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 页面头部 */
+    .page-header {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        border-radius: 16px;
+        padding: 32px 40px;
+        margin-bottom: 24px;
+        color: #fff;
+        position: relative;
+        overflow: hidden;
+    }
+    .page-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 400px;
+        height: 400px;
+        background: radial-gradient(circle, rgba(0,242,255,0.15) 0%, transparent 70%);
+        animation: headerGlow 4s ease-in-out infinite;
+    }
+    @keyframes headerGlow {
+        0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.5; }
+        50% { transform: scale(1.2) rotate(180deg); opacity: 0.8; }
+    }
+    .page-header h2 {
+        font-size: 26px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        position: relative;
+        z-index: 1;
+        margin: 0;
+    }
+    .page-header h2 i {
+        font-size: 36px;
+        color: #00f2ff;
+        text-shadow: 0 0 30px rgba(0,242,255,0.6);
+    }
+    .page-header p {
+        opacity: 0.8;
+        font-size: 14px;
+        margin-top: 8px;
+        position: relative;
+        z-index: 1;
+    }
+
+    /* 筛选栏 */
+    .filter-bar {
+        background: #fff;
+        border-radius: 14px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+    }
+    .filter-bar .layui-form-item {
+        margin-bottom: 0;
+    }
+    .filter-bar .layui-inline {
+        margin-right: 20px;
+    }
+    .filter-bar .layui-btn {
+        border-radius: 8px;
+        padding: 0 24px;
+    }
+
+    /* 统计卡片 */
+    .stats-bar {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+        margin-bottom: 24px;
+    }
+    .stat-card {
+        background: #fff;
+        border-radius: 14px;
+        padding: 20px 24px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: all 0.3s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+    .stat-card .stat-icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        color: #fff;
+    }
+    .stat-card:nth-child(1) .stat-icon { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .stat-card:nth-child(2) .stat-icon { background: linear-gradient(135deg, #11998e, #38ef7d); }
+    .stat-card:nth-child(3) .stat-icon { background: linear-gradient(135deg, #f093fb, #f5576c); }
+    .stat-card:nth-child(4) .stat-icon { background: linear-gradient(135deg, #fbc2eb, #a6c1ee); }
+    .stat-card .stat-info h3 {
+        font-size: 26px;
+        font-weight: 700;
+        color: #333;
+        margin: 0 0 4px 0;
+    }
+    .stat-card .stat-info p {
+        font-size: 13px;
+        color: #888;
+        margin: 0;
+    }
+
+    /* 表格容器 */
+    .table-container {
+        background: #fff;
+        border-radius: 14px;
+        padding: 24px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+    }
+
+    /* 操作按钮 */
+    .layui-btn-xs {
+        padding: 0 12px;
+        height: 28px;
+        line-height: 28px;
+        border-radius: 6px;
+    }
+
+    /* Markdown渲染样式 */
+    .report-content {
+        line-height: 1.8;
+        color: #333;
+    }
+    .report-content h1 {
+        color: #0071e3;
+        border-bottom: 2px solid #0071e3;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+    .report-content h2 {
+        color: #1d1d1f;
+        margin-top: 30px;
+        border-left: 4px solid #0071e3;
+        padding-left: 15px;
+    }
+    .report-content h3 {
+        color: #333;
+        margin-top: 20px;
+    }
+    .report-content p {
+        margin: 15px 0;
+    }
+    .report-content code {
+        background: #f5f5f7;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+        font-size: 0.9em;
+    }
+    .report-content pre {
+        background: #f5f5f7;
+        padding: 15px;
+        border-radius: 8px;
+        overflow-x: auto;
+    }
+    .report-content pre code {
+        background: none;
+        padding: 0;
+    }
+    .report-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+    }
+    .report-content table th,
+    .report-content table td {
+        border: 1px solid #ddd;
+        padding: 12px;
+        text-align: left;
+    }
+    .report-content table th {
+        background: #f5f5f7;
+        font-weight: bold;
+    }
+    .report-content blockquote {
+        border-left: 4px solid #0071e3;
+        margin: 20px 0;
+        padding-left: 20px;
+        color: #666;
+        font-style: italic;
+    }
+
+    /* 报告元信息 */
+    .report-meta {
+        background: #f5f5f7;
+        padding: 15px 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+    .report-meta-item {
+        font-size: 14px;
+        color: #666;
+    }
+    .report-meta-item strong {
+        color: #333;
+    }
+</style>
+
+<!-- Marked.js for Markdown渲染 -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<!-- 页面头部 -->
+<div class="page-header">
+    <h2>
+        <i class="layui-icon layui-icon-file"></i>
+        <span>AI报告管理</span>
+    </h2>
+    <p>查看和管理所有AI生成的数据分析报告,支持按行业和时间筛选</p>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-bar">
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="layui-icon layui-icon-file"></i>
+        </div>
+        <div class="stat-info">
+            <h3 id="totalReports">0</h3>
+            <p>报告总数</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="layui-icon layui-icon-chart"></i>
+        </div>
+        <div class="stat-info">
+            <h3 id="todayReports">0</h3>
+            <p>今日新增</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="layui-icon layui-icon-read"></i>
+        </div>
+        <div class="stat-info">
+            <h3 id="totalViews">0</h3>
+            <p>总浏览量</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="layui-icon layui-icon-download-circle"></i>
+        </div>
+        <div class="stat-info">
+            <h3 id="totalDownloads">0</h3>
+            <p>总下载量</p>
+        </div>
+    </div>
+</div>
+
+<!-- 筛选栏 -->
+<div class="filter-bar">
+    <form class="layui-form" lay-filter="filterForm">
+        <div class="layui-form-item">
+            <div class="layui-inline">
+                <label class="layui-form-label">行业分类</label>
+                <div class="layui-input-inline" style="width: 150px;">
+                    <select name="industry" id="industryFilter">
+                        <option value="">全部行业</option>
+                    </select>
+                </div>
+            </div>
+            <div class="layui-inline">
+                <label class="layui-form-label">时间范围</label>
+                <div class="layui-input-inline" style="width: 240px;">
+                    <input type="text" name="dateRange" id="dateRange" placeholder="请选择日期范围" autocomplete="off" class="layui-input">
+                </div>
+            </div>
+            <div class="layui-inline">
+                <label class="layui-form-label">关键词</label>
+                <div class="layui-input-inline" style="width: 180px;">
+                    <input type="text" name="keyword" id="keywordFilter" placeholder="标题关键词" autocomplete="off" class="layui-input">
+                </div>
+            </div>
+            <div class="layui-inline">
+                <button type="button" class="layui-btn layui-btn-normal" id="searchBtn">
+                    <i class="layui-icon layui-icon-search"></i> 查询
+                </button>
+                <button type="button" class="layui-btn layui-btn-primary" id="resetBtn">
+                    <i class="layui-icon layui-icon-refresh"></i> 重置
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- 表格容器 -->
+<div class="table-container">
+    <table class="layui-hide" id="reportTable" lay-filter="reportTable"></table>
+</div>
+
+<!-- 表格操作按钮模板 -->
+<script type="text/html" id="toolbarTpl">
+    {% raw %}
+    <a class="layui-btn layui-btn-xs layui-btn-normal" lay-event="view">
+        <i class="layui-icon layui-icon-read"></i> 查看
+    </a>
+    <a class="layui-btn layui-btn-xs" lay-event="download">
+        <i class="layui-icon layui-icon-download-circle"></i> 下载PDF
+    </a>
+    <a class="layui-btn layui-btn-xs layui-btn-danger" lay-event="del">
+        <i class="layui-icon layui-icon-delete"></i> 删除
+    </a>
+    {% endraw %}
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+layui.use(['table', 'form', 'laydate', 'layer'], function(){
+    var table = layui.table;
+    var form = layui.form;
+    var laydate = layui.laydate;
+    var layer = layui.layer;
+    var $ = layui.$;
+
+    // 日期范围选择器
+    laydate.render({
+        elem: '#dateRange',
+        type: 'date',
+        range: true
+    });
+
+    // 加载行业列表
+    function loadIndustries() {
+        $.get('/api/reports/industries', function(res) {
+            if (res.code === 0) {
+                var html = '<option value="">全部行业</option>';
+                res.data.forEach(function(industry) {
+                    html += '<option value="' + industry + '">' + industry + '</option>';
+                });
+                $('#industryFilter').html(html);
+                form.render('select');
+            }
+        });
+    }
+    loadIndustries();
+
+    // 加载统计数据
+    function loadStats() {
+        $.get('/api/reports/list?page=1&limit=1', function(res) {
+            if (res.code === 0) {
+                $('#totalReports').text(res.count || 0);
+            }
+        });
+
+        // 今日新增
+        var today = new Date().toISOString().split('T')[0];
+        $.get('/api/reports/list?page=1&limit=1&start_date=' + today, function(res) {
+            if (res.code === 0) {
+                $('#todayReports').text(res.count || 0);
+            }
+        });
+
+        // 计算总浏览和下载(从所有数据中统计)
+        $.get('/api/reports/list?page=1&limit=10000', function(res) {
+            if (res.code === 0 && res.data) {
+                var totalViews = 0;
+                var totalDownloads = 0;
+                res.data.forEach(function(r) {
+                    totalViews += r.view_count || 0;
+                    totalDownloads += r.download_count || 0;
+                });
+                $('#totalViews').text(totalViews);
+                $('#totalDownloads').text(totalDownloads);
+            }
+        });
+    }
+    loadStats();
+
+    // 渲染表格
+    var tableIns = table.render({
+        elem: '#reportTable',
+        url: '/api/reports/list',
+        page: true,
+        limit: 10,
+        limits: [10, 20, 50, 100],
+        cols: [[
+            {field: 'id', title: 'ID', width: 80, sort: true},
+            {field: 'title', title: '报告标题', minWidth: 300, templet: function(d) {
+                return '<div style="font-weight: 500; color: #333;">' + d.title + '</div>';
+            }},
+            {field: 'industry', title: '行业', width: 120, templet: function(d) {
+                return d.industry || '<span style="color: #999;">未分类</span>';
+            }},
+            {field: 'word_count', title: '字数', width: 100, sort: true, templet: function(d) {
+                return (d.word_count || 0).toLocaleString() + ' 字';
+            }},
+            {field: 'view_count', title: '浏览', width: 100, sort: true},
+            {field: 'download_count', title: '下载', width: 100, sort: true},
+            {field: 'creator_name', title: '创建人', width: 120},
+            {field: 'created_at', title: '创建时间', width: 180, sort: true},
+            {title: '操作', width: 240, align: 'center', fixed: 'right', toolbar: '#toolbarTpl'}
+        ]]
+    });
+
+    // 查询按钮
+    $('#searchBtn').on('click', function() {
+        var industry = $('#industryFilter').val();
+        var dateRange = $('#dateRange').val();
+        var keyword = $('#keywordFilter').val();
+
+        var where = {};
+        if (industry) where.industry = industry;
+        if (keyword) where.keyword = keyword;
+
+        // 解析日期范围
+        if (dateRange) {
+            var dates = dateRange.split(' - ');
+            if (dates.length === 2) {
+                where.start_date = dates[0];
+                where.end_date = dates[1];
+            }
+        }
+
+        // 重新加载表格
+        table.reload('reportTable', {
+            where: where,
+            page: {
+                curr: 1
+            }
+        });
+    });
+
+    // 重置按钮
+    $('#resetBtn').on('click', function() {
+        $('#industryFilter').val('');
+        $('#dateRange').val('');
+        $('#keywordFilter').val('');
+        form.render('select');
+
+        table.reload('reportTable', {
+            where: {},
+            page: {
+                curr: 1
+            }
+        });
+    });
+
+    // 工具栏事件
+    table.on('tool(reportTable)', function(obj) {
+        var data = obj.data;
+
+        if (obj.event === 'view') {
+            // 查看报告详情
+            viewReport(data.id);
+        } else if (obj.event === 'download') {
+            // 下载PDF
+            downloadReport(data.id, data.title);
+        } else if (obj.event === 'del') {
+            // 删除报告
+            layer.confirm('确定要删除报告《' + data.title + '》吗？', {
+                icon: 3,
+                title: '提示',
+                btn: ['确定', '取消']
+            }, function(index) {
+                deleteReport(data.id, function() {
+                    obj.del();
+                    layer.close(index);
+                    layer.msg('删除成功', {icon: 1});
+                    loadStats(); // 刷新统计
+                });
+            });
+        }
+    });
+
+    // 查看报告
+    function viewReport(reportId) {
+        var loadIndex = layer.load(1);
+
+        $.get('/api/reports/' + reportId, function(res) {
+            layer.close(loadIndex);
+
+            if (res.code === 0) {
+                var report = res.data;
+
+                // 使用marked渲染Markdown
+                var htmlContent = marked.parse(report.content);
+
+                var metaHtml = '<div class="report-meta">' +
+                    '<div class="report-meta-item"><strong>行业分类:</strong> ' + (report.industry || '未分类') + '</div>' +
+                    '<div class="report-meta-item"><strong>创建人:</strong> ' + report.creator_name + '</div>' +
+                    '<div class="report-meta-item"><strong>生成时间:</strong> ' + report.created_at + '</div>' +
+                    '<div class="report-meta-item"><strong>字数:</strong> ' + report.word_count + ' 字</div>' +
+                    '<div class="report-meta-item"><strong>浏览次数:</strong> ' + report.view_count + '</div>' +
+                    '<div class="report-meta-item"><strong>下载次数:</strong> ' + report.download_count + '</div>' +
+                    '</div>';
+
+                var content = metaHtml + '<div class="report-content">' + htmlContent + '</div>';
+
+                layer.open({
+                    type: 1,
+                    title: '<i class="layui-icon layui-icon-file"></i> ' + report.title,
+                    area: ['900px', '80%'],
+                    content: '<div style="padding: 20px 30px;">' + content + '</div>',
+                    btn: ['下载PDF', '关闭'],
+                    yes: function(index, layero) {
+                        downloadReport(reportId, report.title);
+                    }
+                });
+            } else {
+                layer.msg(res.msg || '获取报告失败', {icon: 2});
+            }
+        }).fail(function() {
+            layer.close(loadIndex);
+            layer.msg('网络错误', {icon: 2});
+        });
+    }
+
+    // 下载报告 - 支持多种格式
+    function downloadReport(reportId, title) {
+        // 弹出格式选择对话框
+        layer.open({
+            type: 1,
+            title: '<i class="layui-icon layui-icon-download-circle"></i> 选择下载格式',
+            area: ['450px', '320px'],
+            content: `
+                <div style="padding: 30px 40px;">
+                    <div style="margin-bottom: 25px;">
+                        <p style="color: #666; font-size: 14px; line-height: 1.8; margin-bottom: 20px;">
+                            请选择报告的下载格式：
+                        </p>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <button class="layui-btn layui-btn-normal" onclick="doDownload(${reportId}, 'html')" style="width: 100%; height: 45px; font-size: 15px;">
+                                <i class="layui-icon layui-icon-file"></i> HTML格式 (推荐)
+                            </button>
+                            <button class="layui-btn layui-btn-primary" onclick="doDownload(${reportId}, 'md')" style="width: 100%; height: 45px; font-size: 15px; border: 1px solid #ddd;">
+                                <i class="layui-icon layui-icon-file"></i> Markdown格式
+                            </button>
+                            <button class="layui-btn layui-btn-warm" onclick="doDownload(${reportId}, 'pdf')" style="width: 100%; height: 45px; font-size: 15px;">
+                                <i class="layui-icon layui-icon-file"></i> PDF格式 (需依赖)
+                            </button>
+                        </div>
+                        <p style="color: #ff9500; font-size: 12px; margin-top: 15px; line-height: 1.6;">
+                            <i class="layui-icon layui-icon-tips"></i> PDF格式在Windows系统可能需要额外依赖，建议使用HTML格式
+                        </p>
+                    </div>
+                </div>
+            `,
+            btn: []
+        });
+    }
+
+    // 执行下载
+    window.doDownload = function(reportId, format) {
+        layer.closeAll('dialog');
+
+        var formatName = format === 'pdf' ? 'PDF' : format === 'html' ? 'HTML' : 'Markdown';
+        layer.msg('正在生成' + formatName + '文件,请稍候...', {icon: 16, time: 0, shade: 0.3});
+
+        // 使用fetch检查响应
+        fetch('/api/reports/' + reportId + '/download?format=' + format)
+            .then(function(response) {
+                if (response.ok) {
+                    // 成功，触发下载
+                    window.location.href = '/api/reports/' + reportId + '/download?format=' + format;
+                    setTimeout(function() {
+                        layer.closeAll('msg');
+                        layer.msg('下载成功', {icon: 1});
+                        loadStats(); // 刷新统计
+                    }, 1000);
+                } else {
+                    // 失败，显示错误信息
+                    return response.json();
+                }
+            })
+            .then(function(data) {
+                if (data && data.code === 1) {
+                    layer.closeAll('msg');
+                    var msg = data.msg;
+                    if (data.suggestion) {
+                        msg += '<br><span style="color: #ff9500;">' + data.suggestion + '</span>';
+                    }
+                    layer.alert(msg, {
+                        icon: 0,
+                        title: '下载提示',
+                        btn: ['我知道了']
+                    });
+                }
+            })
+            .catch(function(error) {
+                layer.closeAll('msg');
+                layer.msg('下载失败: ' + error.message, {icon: 2});
+            });
+    };
+
+    // 删除报告
+    function deleteReport(reportId, callback) {
+        $.ajax({
+            url: '/api/reports/delete',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({id: reportId}),
+            success: function(res) {
+                if (res.code === 0) {
+                    callback && callback();
+                } else {
+                    layer.msg(res.msg || '删除失败', {icon: 2});
+                }
+            },
+            error: function() {
+                layer.msg('网络错误', {icon: 2});
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

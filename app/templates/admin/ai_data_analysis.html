@@ -3,151 +3,200 @@
 {% block title %}AI数据分析{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
 <style>
+    /* ========== 全局变量和基础样式 ========== */
+    :root {
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        --info-gradient: linear-gradient(135deg, #00c6fb 0%, #005bea 100%);
+        --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        --glow-primary: 0 0 30px rgba(102,126,234,0.6);
+        --glow-success: 0 0 30px rgba(17,153,142,0.6);
+        --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
     /* 页面头部 */
     .page-header {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        border-radius: 16px;
-        padding: 32px 40px;
-        margin-bottom: 24px;
+        background: var(--primary-gradient);
+        border-radius: 20px;
+        padding: 36px 44px;
+        margin-bottom: 28px;
         color: #fff;
         display: flex;
         justify-content: space-between;
         align-items: center;
         position: relative;
         overflow: hidden;
+        box-shadow: 0 10px 40px rgba(102,126,234,0.3);
     }
     .page-header::before {
         content: '';
         position: absolute;
         top: -50%;
         right: -10%;
-        width: 400px;
-        height: 400px;
-        background: radial-gradient(circle, rgba(102,126,234,0.15) 0%, transparent 70%);
-        animation: headerGlow 4s ease-in-out infinite;
+        width: 450px;
+        height: 450px;
+        background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+        animation: headerGlow 6s ease-in-out infinite;
     }
     @keyframes headerGlow {
-        0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.5; }
-        50% { transform: scale(1.2) rotate(180deg); opacity: 0.8; }
+        0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.4; }
+        50% { transform: scale(1.3) rotate(180deg); opacity: 0.7; }
     }
     .page-header h2 {
-        font-size: 26px;
+        font-size: 28px;
         font-weight: 700;
         display: flex;
         align-items: center;
-        gap: 14px;
+        gap: 16px;
         position: relative;
         z-index: 1;
+        margin: 0;
     }
     .page-header h2 i {
-        font-size: 36px;
-        color: #667eea;
-        text-shadow: 0 0 30px rgba(102,126,234,0.6);
+        font-size: 40px;
+        color: #fff;
+        text-shadow: var(--glow-primary);
         animation: iconFloat 3s ease-in-out infinite;
     }
     @keyframes iconFloat {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-5px); }
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        50% { transform: translateY(-6px) rotate(5deg); }
     }
     .page-header p {
-        opacity: 0.8;
-        font-size: 14px;
-        margin-top: 8px;
+        opacity: 0.9;
+        font-size: 15px;
+        margin: 10px 0 0;
         position: relative;
         z-index: 1;
+    }
+    .header-actions {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        gap: 12px;
+    }
+    .header-btn {
+        padding: 10px 20px;
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.3);
+        border-radius: 12px;
+        color: #fff;
+        cursor: pointer;
+        transition: var(--transition-smooth);
+        font-size: 13px;
+        backdrop-filter: blur(10px);
+    }
+    .header-btn:hover {
+        background: rgba(255,255,255,0.3);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.2);
     }
 
     /* 主体布局 */
     .main-container {
         display: flex;
-        gap: 24px;
-        height: calc(100vh - 280px);
-        min-height: 500px;
+        gap: 28px;
+        height: calc(100vh - 300px);
+        min-height: 550px;
     }
 
     /* 左侧功能面板 */
     .func-panel {
-        width: 300px;
+        width: 320px;
         flex-shrink: 0;
         background: var(--card-bg);
-        border-radius: 16px;
-        box-shadow: 0 4px 20px var(--shadow-color);
+        border-radius: 20px;
+        box-shadow: 0 6px 30px var(--shadow-color);
         display: flex;
         flex-direction: column;
         overflow: hidden;
         border: 1px solid var(--border-color);
-        transition: all 0.3s ease;
+        transition: var(--transition-smooth);
+    }
+    .func-panel:hover {
+        box-shadow: 0 10px 40px var(--shadow-color);
     }
     .func-panel-header {
-        padding: 20px;
+        padding: 24px;
         border-bottom: 1px solid var(--border-color);
         background: var(--bg-sidebar);
     }
     .func-panel-header h3 {
-        font-size: 16px;
+        font-size: 17px;
         font-weight: 600;
         color: var(--text-primary);
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
+        margin: 0;
     }
     .func-panel-header h3 i {
         color: #667eea;
+        font-size: 22px;
     }
     .func-panel-body {
         flex: 1;
         overflow-y: auto;
         padding: 20px;
     }
+    .func-panel-body::-webkit-scrollbar {
+        width: 6px;
+    }
+    .func-panel-body::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 3px;
+    }
 
     /* 功能卡片 */
     .func-card {
         background: var(--nav-hover-bg);
-        border-radius: 12px;
-        padding: 18px;
-        margin-bottom: 16px;
+        border-radius: 14px;
+        padding: 20px;
+        margin-bottom: 18px;
         border: 1px solid var(--border-color);
-        transition: all 0.3s;
+        transition: var(--transition-smooth);
     }
     .func-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 24px var(--shadow-color);
+        transform: translateY(-3px) scale(1.02);
+        box-shadow: 0 10px 30px var(--shadow-color);
         border-color: #667eea;
     }
     .func-card-title {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
         font-weight: 600;
         color: var(--text-primary);
-        font-size: 14px;
-        margin-bottom: 12px;
+        font-size: 15px;
+        margin-bottom: 14px;
     }
     .func-card-title i {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 16px;
+        font-size: 18px;
         color: #fff;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
     .func-card:nth-child(1) .func-card-title i {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: var(--primary-gradient);
     }
     .func-card:nth-child(2) .func-card-title i {
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        background: var(--success-gradient);
     }
     .func-card:nth-child(3) .func-card-title i {
-        background: linear-gradient(135deg, #00c6fb 0%, #005bea 100%);
+        background: var(--info-gradient);
     }
     .func-card:nth-child(4) .func-card-title i {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        background: var(--warning-gradient);
     }
     .func-card-content {
-        font-size: 12px;
+        font-size: 13px;
         color: var(--text-secondary);
         line-height: 1.8;
     }
@@ -157,74 +206,97 @@
         margin: 0;
     }
     .func-card-content ul li {
-        padding: 4px 0 4px 16px;
+        padding: 6px 0 6px 20px;
         position: relative;
+        transition: var(--transition-smooth);
+    }
+    .func-card-content ul li:hover {
+        color: var(--text-primary);
+        transform: translateX(4px);
     }
     .func-card-content ul li:before {
-        content: '•';
+        content: '▸';
         position: absolute;
         left: 0;
         color: #667eea;
+        font-weight: bold;
     }
 
     /* 示例查询卡片 */
     .example-query {
         background: var(--card-bg);
-        padding: 10px 14px;
-        border-radius: 8px;
-        margin-bottom: 8px;
+        padding: 12px 16px;
+        border-radius: 10px;
+        margin-bottom: 10px;
         cursor: pointer;
         border: 1px solid var(--border-color);
-        font-size: 12px;
+        font-size: 13px;
         color: var(--text-secondary);
-        transition: all 0.2s;
+        transition: var(--transition-smooth);
+        display: flex;
+        align-items: center;
+        gap: 10px;
     }
     .example-query:hover {
-        background: var(--nav-hover-bg);
-        border-color: #667eea;
-        color: #667eea;
+        background: var(--primary-gradient);
+        border-color: transparent;
+        color: #fff;
+        transform: translateX(6px);
+        box-shadow: 0 6px 20px rgba(102,126,234,0.3);
+    }
+    .example-query:hover i {
+        color: #fff;
+        transform: scale(1.2) rotate(10deg);
     }
     .example-query i {
-        margin-right: 6px;
         color: #667eea;
+        font-size: 16px;
+        transition: var(--transition-smooth);
     }
 
     /* 提示框 */
     .tip-box {
-        background: rgba(255, 248, 220, 0.15);
+        background: linear-gradient(135deg, rgba(255, 248, 220, 0.15) 0%, rgba(255, 215, 0, 0.1) 100%);
         border: 1px solid rgba(255, 215, 0, 0.3);
-        border-radius: 8px;
-        padding: 12px;
-        margin-top: 16px;
+        border-radius: 12px;
+        padding: 16px;
+        margin-top: 20px;
     }
     .tip-box-title {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         color: #ff9800;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 600;
-        margin-bottom: 6px;
+        margin-bottom: 8px;
+    }
+    .tip-box-title i {
+        font-size: 18px;
     }
     .tip-box-content {
-        font-size: 11px;
+        font-size: 12px;
         color: var(--text-secondary);
-        line-height: 1.6;
+        line-height: 1.7;
     }
 
-    /* 右侧对话区域 */
+    /* ========== 右侧对话区域 ========== */
     .chat-panel {
         flex: 1;
         background: var(--card-bg);
-        border-radius: 16px;
-        box-shadow: 0 4px 20px var(--shadow-color);
+        border-radius: 20px;
+        box-shadow: 0 6px 30px var(--shadow-color);
         display: flex;
         flex-direction: column;
         overflow: hidden;
         border: 1px solid var(--border-color);
+        transition: var(--transition-smooth);
+    }
+    .chat-panel:hover {
+        box-shadow: 0 10px 40px var(--shadow-color);
     }
     .chat-header {
-        padding: 20px 24px;
+        padding: 24px 28px;
         border-bottom: 1px solid var(--border-color);
         display: flex;
         justify-content: space-between;
@@ -232,260 +304,495 @@
         background: var(--bg-sidebar);
     }
     .chat-header h3 {
-        font-size: 16px;
+        font-size: 17px;
         font-weight: 600;
         color: var(--text-primary);
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
+        margin: 0;
     }
     .chat-header h3 i {
         color: #667eea;
+        font-size: 22px;
     }
     .engine-selector {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
     }
     .engine-selector label {
-        font-size: 13px;
+        font-size: 14px;
         color: var(--text-secondary);
     }
     .engine-selector select {
-        padding: 8px 12px;
+        padding: 10px 14px;
         border: 1px solid var(--border-color);
-        border-radius: 8px;
-        font-size: 13px;
+        border-radius: 10px;
+        font-size: 14px;
         outline: none;
         cursor: pointer;
-        min-width: 150px;
+        min-width: 160px;
         background: var(--card-bg);
         color: var(--text-primary);
+        transition: var(--transition-smooth);
     }
     .engine-selector select:focus {
         border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102,126,234,0.1);
     }
 
     /* 对话消息区 */
     .chat-messages {
         flex: 1;
         overflow-y: auto;
-        padding: 24px;
+        padding: 28px;
         background: var(--bg-secondary);
     }
+    .chat-messages::-webkit-scrollbar {
+        width: 8px;
+    }
+    .chat-messages::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 4px;
+    }
     .message {
-        margin-bottom: 20px;
+        margin-bottom: 24px;
         display: flex;
-        gap: 12px;
+        gap: 14px;
+        animation: messageSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes messageSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
     .message.user {
         flex-direction: row-reverse;
     }
     .message-avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 18px;
+        font-size: 20px;
         flex-shrink: 0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
     .message.user .message-avatar {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: var(--primary-gradient);
         color: #fff;
     }
     .message.assistant .message-avatar {
-        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        background: var(--success-gradient);
         color: #fff;
+    }
+    .message-content-wrapper {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
     }
     .message-content {
-        max-width: 70%;
-        padding: 14px 18px;
-        border-radius: 16px;
+        max-width: 75%;
+        padding: 16px 20px;
+        border-radius: 18px;
         font-size: 14px;
-        line-height: 1.6;
+        line-height: 1.7;
+        word-wrap: break-word;
+        position: relative;
     }
     .message.user .message-content {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: var(--primary-gradient);
         color: #fff;
-        border-bottom-right-radius: 4px;
+        border-bottom-right-radius: 6px;
+        box-shadow: 0 4px 16px rgba(102,126,234,0.3);
+        margin-left: auto;
     }
     .message.assistant .message-content {
         background: var(--card-bg);
         color: var(--text-primary);
-        border-bottom-left-radius: 4px;
-        box-shadow: 0 2px 10px var(--shadow-color);
+        border-bottom-left-radius: 6px;
+        box-shadow: 0 4px 16px var(--shadow-color);
         border: 1px solid var(--border-color);
     }
-    .message.assistant .message-content pre {
-        background: var(--bg-secondary);
-        padding: 12px;
-        border-radius: 8px;
-        overflow-x: auto;
+
+    /* Markdown样式优化 */
+    .message.assistant .message-content h1,
+    .message.assistant .message-content h2,
+    .message.assistant .message-content h3 {
+        color: var(--text-primary);
+        margin: 16px 0 10px;
+        font-weight: 600;
+    }
+    .message.assistant .message-content h1 { font-size: 22px; }
+    .message.assistant .message-content h2 { font-size: 20px; }
+    .message.assistant .message-content h3 { font-size: 18px; }
+
+    .message.assistant .message-content p {
         margin: 10px 0;
+        line-height: 1.8;
+    }
+
+    .message.assistant .message-content ul,
+    .message.assistant .message-content ol {
+        padding-left: 24px;
+        margin: 10px 0;
+    }
+    .message.assistant .message-content li {
+        margin: 6px 0;
+        line-height: 1.7;
+    }
+
+    .message.assistant .message-content blockquote {
+        border-left: 4px solid #667eea;
+        padding: 12px 16px;
+        margin: 12px 0;
+        background: var(--bg-secondary);
+        border-radius: 6px;
+        color: var(--text-secondary);
+    }
+
+    .message.assistant .message-content pre {
+        background: #1e1e1e;
+        padding: 16px;
+        border-radius: 10px;
+        overflow-x: auto;
+        margin: 14px 0;
         border: 1px solid var(--border-color);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
     .message.assistant .message-content code {
-        font-family: 'Consolas', monospace;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
         font-size: 13px;
-        color: var(--text-primary);
     }
+    .message.assistant .message-content pre code {
+        background: transparent;
+        padding: 0;
+        border: none;
+    }
+    .message.assistant .message-content :not(pre) > code {
+        background: var(--bg-secondary);
+        padding: 2px 8px;
+        border-radius: 4px;
+        color: #667eea;
+        border: 1px solid var(--border-color);
+        font-size: 12px;
+    }
+
     .message.assistant .message-content table {
         width: 100%;
         border-collapse: collapse;
-        margin: 10px 0;
+        margin: 14px 0;
         font-size: 13px;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px var(--shadow-color);
     }
     .message.assistant .message-content th,
     .message.assistant .message-content td {
         border: 1px solid var(--border-color);
-        padding: 8px 12px;
+        padding: 10px 14px;
         text-align: left;
     }
     .message.assistant .message-content th {
         background: var(--bg-secondary);
         font-weight: 600;
+        color: var(--text-primary);
+    }
+    .message.assistant .message-content tr:hover {
+        background: var(--nav-hover-bg);
     }
 
-    /* 工具调用提示 */
-    .tool-calls-info {
-        background: #f0f7ff;
-        border: 1px solid #d0e3ff;
-        border-radius: 8px;
-        padding: 10px 14px;
+    /* 工具调用进度提示 */
+    .tool-progress {
+        background: linear-gradient(135deg, rgba(102,126,234,0.1) 0%, rgba(17,153,142,0.1) 100%);
+        border: 1px solid rgba(102,126,234,0.3);
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-top: 10px;
+        font-size: 13px;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        animation: progressPulse 2s ease-in-out infinite;
+    }
+    @keyframes progressPulse {
+        0%, 100% { opacity: 0.8; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.01); }
+    }
+    .tool-progress i {
+        font-size: 18px;
+        color: #667eea;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    .tool-progress .progress-text {
+        flex: 1;
+    }
+    .tool-progress .progress-badge {
+        background: #667eea;
+        color: #fff;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    /* 工具调用结果 */
+    .tool-call-result {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 12px 16px;
         margin-top: 10px;
         font-size: 12px;
-        color: #4a6fa5;
     }
-    .tool-calls-info i {
-        margin-right: 6px;
+    .tool-call-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        color: #11998e;
+        font-weight: 600;
+    }
+    .tool-call-header i {
+        font-size: 16px;
+    }
+    .tool-call-body {
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+
+    /* 消息操作按钮 */
+    .message-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        opacity: 0;
+        transition: var(--transition-smooth);
+    }
+    .message:hover .message-actions {
+        opacity: 1;
+    }
+    .message.user .message-actions {
+        justify-content: flex-end;
+    }
+    .message-action-btn {
+        padding: 6px 12px;
+        background: var(--nav-hover-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: var(--transition-smooth);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .message-action-btn:hover {
+        background: #667eea;
+        border-color: #667eea;
+        color: #fff;
+        transform: translateY(-2px);
+    }
+    .message-action-btn i {
+        font-size: 14px;
     }
 
     /* 加载动画 */
     .typing-indicator {
         display: flex;
-        gap: 6px;
-        padding: 14px 18px;
+        gap: 8px;
+        padding: 16px 20px;
+        align-items: center;
     }
     .typing-indicator span {
-        width: 8px;
-        height: 8px;
-        background: #667eea;
+        width: 10px;
+        height: 10px;
+        background: var(--primary-gradient);
         border-radius: 50%;
         animation: typing 1.4s infinite ease-in-out;
+        box-shadow: 0 2px 6px rgba(102,126,234,0.4);
     }
     .typing-indicator span:nth-child(1) { animation-delay: 0s; }
     .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
     .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
     @keyframes typing {
-        0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-        30% { transform: translateY(-8px); opacity: 1; }
+        0%, 60%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
+        30% { transform: translateY(-10px) scale(1.2); opacity: 1; }
     }
 
     /* 输入区域 */
     .chat-input {
-        padding: 20px 24px;
+        padding: 24px 28px;
         border-top: 1px solid var(--border-color);
         background: var(--card-bg);
     }
     .input-wrapper {
         display: flex;
-        gap: 12px;
+        gap: 14px;
         align-items: flex-end;
     }
     .input-wrapper textarea {
         flex: 1;
-        padding: 14px 18px;
+        padding: 16px 20px;
         border: 2px solid var(--border-color);
-        border-radius: 14px;
+        border-radius: 16px;
         font-size: 14px;
         resize: none;
         outline: none;
-        transition: all 0.3s;
-        min-height: 50px;
-        max-height: 120px;
+        transition: var(--transition-smooth);
+        min-height: 56px;
+        max-height: 140px;
         font-family: inherit;
         background: var(--bg-secondary);
         color: var(--text-primary);
+        line-height: 1.6;
     }
     .input-wrapper textarea:focus {
         border-color: #667eea;
-        box-shadow: 0 0 0 4px rgba(102,126,234,0.1);
+        box-shadow: 0 0 0 5px rgba(102,126,234,0.1);
         background: var(--card-bg);
     }
     .input-wrapper textarea::placeholder {
         color: var(--text-tertiary);
     }
     .btn-send {
-        width: 50px;
-        height: 50px;
+        width: 56px;
+        height: 56px;
         border: none;
-        border-radius: 14px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 16px;
+        background: var(--primary-gradient);
         color: #fff;
-        font-size: 20px;
+        font-size: 22px;
         cursor: pointer;
-        transition: all 0.3s;
+        transition: var(--transition-smooth);
         display: flex;
         align-items: center;
         justify-content: center;
-    }
-    .btn-send:hover {
-        transform: scale(1.05);
         box-shadow: 0 6px 20px rgba(102,126,234,0.4);
     }
+    .btn-send:hover {
+        transform: translateY(-3px) scale(1.05);
+        box-shadow: 0 10px 30px rgba(102,126,234,0.5);
+    }
     .btn-send:disabled {
-        opacity: 0.6;
+        opacity: 0.5;
         cursor: not-allowed;
         transform: none;
+    }
+    .btn-send:active {
+        transform: translateY(-1px) scale(1.02);
     }
 
     /* 快捷问题 */
     .quick-questions {
         display: flex;
-        gap: 10px;
-        margin-top: 12px;
+        gap: 12px;
+        margin-top: 14px;
         flex-wrap: wrap;
     }
     .quick-btn {
-        padding: 8px 14px;
+        padding: 10px 16px;
         background: var(--nav-hover-bg);
         border: 1px solid var(--border-color);
-        border-radius: 20px;
-        font-size: 12px;
+        border-radius: 24px;
+        font-size: 13px;
         color: var(--text-secondary);
         cursor: pointer;
-        transition: all 0.2s;
+        transition: var(--transition-smooth);
+        display: flex;
+        align-items: center;
+        gap: 6px;
     }
     .quick-btn:hover {
-        background: #667eea;
-        border-color: #667eea;
+        background: var(--primary-gradient);
+        border-color: transparent;
         color: #fff;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102,126,234,0.3);
+    }
+    .quick-btn i {
+        font-size: 14px;
     }
 
     /* 欢迎消息 */
     .welcome-message {
         text-align: center;
-        padding: 60px 40px;
+        padding: 80px 50px;
         color: var(--text-tertiary);
+        animation: fadeIn 0.6s ease-in;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
     }
     .welcome-message i {
-        font-size: 64px;
+        font-size: 72px;
         color: #667eea;
-        margin-bottom: 20px;
+        margin-bottom: 24px;
         display: block;
-        opacity: 0.6;
+        opacity: 0.7;
+        animation: iconBounce 2s ease-in-out infinite;
+    }
+    @keyframes iconBounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-10px); }
     }
     .welcome-message h4 {
-        font-size: 18px;
+        font-size: 20px;
         color: var(--text-primary);
-        margin-bottom: 10px;
+        margin-bottom: 12px;
+        font-weight: 600;
     }
     .welcome-message p {
-        font-size: 14px;
+        font-size: 15px;
         line-height: 1.8;
         color: var(--text-secondary);
+    }
+    .welcome-examples {
+        max-width: 550px;
+        margin: 24px auto 0;
+        text-align: left;
+        background: var(--nav-hover-bg);
+        padding: 24px;
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+    }
+    .welcome-examples-title {
+        font-size: 14px;
+        color: var(--text-primary);
+        margin-bottom: 14px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .welcome-examples-list {
+        font-size: 13px;
+        color: var(--text-secondary);
+        line-height: 2.2;
+    }
+    .welcome-examples-list div {
+        padding: 4px 0;
+        transition: var(--transition-smooth);
+    }
+    .welcome-examples-list div:hover {
+        color: #667eea;
+        transform: translateX(6px);
     }
 </style>
 {% endblock %}
@@ -494,7 +801,15 @@
 <div class="page-header">
     <div>
         <h2><i class="layui-icon layui-icon-console"></i>AI数据分析</h2>
-        <p>使用AI助手分析和查询数据库中的数据，支持自然语言交互</p>
+        <p>使用AI助手智能分析数据库，支持自然语言交互和工具调用</p>
+    </div>
+    <div class="header-actions">
+        <button class="header-btn" id="clearChatBtn">
+            <i class="layui-icon layui-icon-delete"></i> 清空对话
+        </button>
+        <button class="header-btn" id="exportChatBtn">
+            <i class="layui-icon layui-icon-export"></i> 导出会话
+        </button>
     </div>
 </div>
 
@@ -515,8 +830,9 @@
                     <ul>
                         <li>智能理解自然语言查询</li>
                         <li>自动生成SQL查询语句</li>
-                        <li>数据可视化和统计分析</li>
+                        <li>实时数据统计和分析</li>
                         <li>多轮对话记忆功能</li>
+                        <li>可视化工具调用过程</li>
                     </ul>
                 </div>
             </div>
@@ -530,23 +846,23 @@
                 <div class="func-card-content">
                     <div class="example-query" data-q="数据库有哪些表？每个表有多少数据？">
                         <i class="layui-icon layui-icon-template"></i>
-                        查看数据库概况
+                        <span>查看数据库概况</span>
                     </div>
                     <div class="example-query" data-q="查询最近采集的20条新闻，包括标题、来源和采集时间">
                         <i class="layui-icon layui-icon-list"></i>
-                        最近采集的新闻
+                        <span>最近采集的新闻</span>
                     </div>
                     <div class="example-query" data-q="统计不同来源的新闻数量，按数量降序排列">
                         <i class="layui-icon layui-icon-chart"></i>
-                        统计新闻来源
+                        <span>统计新闻来源</span>
                     </div>
                     <div class="example-query" data-q="分析已深度采集和未深度采集的数据比例">
                         <i class="layui-icon layui-icon-rate"></i>
-                        深度采集统计
+                        <span>深度采集统计</span>
                     </div>
                     <div class="example-query" data-q="找出所有采集失败的新闻及失败原因">
                         <i class="layui-icon layui-icon-close-fill"></i>
-                        采集失败分析
+                        <span>采集失败分析</span>
                     </div>
                 </div>
             </div>
@@ -561,8 +877,8 @@
                     <ul>
                         <li>可以要求AI生成图表和统计</li>
                         <li>支持复杂的多表关联查询</li>
-                        <li>可以请求数据导出建议</li>
                         <li>支持时间范围和条件过滤</li>
+                        <li>可以追问和细化你的需求</li>
                     </ul>
                 </div>
             </div>
@@ -576,9 +892,9 @@
                 <div class="func-card-content">
                     <ul>
                         <li>尽量使用清晰明确的问题</li>
-                        <li>可以追问和细化你的需求</li>
                         <li>支持中文自然语言交互</li>
                         <li>AI会保留对话上下文</li>
+                        <li>可实时查看工具调用过程</li>
                     </ul>
                 </div>
             </div>
@@ -612,19 +928,21 @@
             <div class="welcome-message">
                 <i class="layui-icon layui-icon-console"></i>
                 <h4>欢迎使用AI数据分析助手</h4>
-                <p style="margin-bottom: 16px;">我是你的智能数据分析助手，可以帮你分析和查询数据库中的舆情数据</p>
-                <div style="max-width: 500px; margin: 0 auto; text-align: left; background: var(--nav-hover-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color);">
-                    <p style="font-size: 13px; color: var(--text-primary); margin-bottom: 12px;"><b>💡 你可以这样问我：</b></p>
-                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 2;">
-                       • 数据库中有多少条新闻数据？<br>
-                       • 查询最近7天采集的新闻<br>
-                       • 哪个新闻源采集的数据最多？<br>
-                       • 分析深度采集的成功率<br>
-                       • 统计不同时间段的数据分布
+                <p style="margin-bottom: 18px;">我是你的智能数据分析助手，可以帮你分析和查询数据库中的舆情数据</p>
+                <div class="welcome-examples">
+                    <div class="welcome-examples-title">
+                        💡 你可以这样问我：
+                    </div>
+                    <div class="welcome-examples-list">
+                       <div>• 数据库中有多少条新闻数据？</div>
+                       <div>• 查询最近7天采集的新闻</div>
+                       <div>• 哪个新闻源采集的数据最多？</div>
+                       <div>• 分析深度采集的成功率</div>
+                       <div>• 统计不同时间段的数据分布</div>
                     </div>
                 </div>
-                <p style="margin-top: 20px; font-size: 12px; color: var(--text-tertiary);">
-                    <i class="layui-icon layui-icon-tips" style="color: #667eea;"></i>
+                <p style="margin-top: 24px; font-size: 13px; color: var(--text-tertiary);">
+                    <i class="layui-icon layui-icon-tips" style="color: #667eea; font-size: 16px;"></i>
                     左侧有更多示例查询，点击即可快速使用
                 </p>
             </div>
@@ -632,16 +950,28 @@
 
         <div class="chat-input">
             <div class="input-wrapper">
-                <textarea id="messageInput" placeholder="输入你的问题，按Enter发送..." rows="1"></textarea>
+                <textarea id="messageInput" placeholder="输入你的问题，按Enter发送，Shift+Enter换行..." rows="1"></textarea>
                 <button class="btn-send" id="sendBtn">
                     <i class="layui-icon layui-icon-top"></i>
                 </button>
             </div>
             <div class="quick-questions">
-                <button class="quick-btn" data-q="查询最近采集的20条新闻">最近新闻</button>
-                <button class="quick-btn" data-q="统计不同来源的新闻数量">统计来源</button>
-                <button class="quick-btn" data-q="分析深度采集的成功率">采集成功率</button>
-                <button class="quick-btn" data-q="查询今天采集了多少条数据">今日数据</button>
+                <button class="quick-btn" data-q="查询最近采集的20条新闻">
+                    <i class="layui-icon layui-icon-list"></i>
+                    最近新闻
+                </button>
+                <button class="quick-btn" data-q="统计不同来源的新闻数量">
+                    <i class="layui-icon layui-icon-chart"></i>
+                    统计来源
+                </button>
+                <button class="quick-btn" data-q="分析深度采集的成功率">
+                    <i class="layui-icon layui-icon-rate"></i>
+                    采集成功率
+                </button>
+                <button class="quick-btn" data-q="查询今天采集了多少条数据">
+                    <i class="layui-icon layui-icon-time"></i>
+                    今日数据
+                </button>
             </div>
         </div>
     </div>
@@ -650,6 +980,7 @@
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
 <script>
 layui.use(['layer'], function(){
     var $ = layui.$;
@@ -657,6 +988,21 @@ layui.use(['layer'], function(){
 
     var chatHistory = [];
     var isLoading = false;
+    var currentEventSource = null;
+
+    // 配置marked和highlight.js
+    marked.setOptions({
+        highlight: function(code, lang) {
+            if (lang && hljs.getLanguage(lang)) {
+                try {
+                    return hljs.highlight(code, { language: lang }).value;
+                } catch (e) {}
+            }
+            return hljs.highlightAuto(code).value;
+        },
+        breaks: true,
+        gfm: true
+    });
 
     // 加载AI引擎列表
     function loadEngines() {
@@ -677,7 +1023,7 @@ layui.use(['layer'], function(){
         });
     }
 
-    // 发送消息
+    // 发送消息（使用SSE流式响应）
     function sendMessage() {
         var message = $('#messageInput').val().trim();
         if (!message || isLoading) return;
@@ -692,100 +1038,407 @@ layui.use(['layer'], function(){
         // 显示加载动画
         isLoading = true;
         $('#sendBtn').prop('disabled', true);
-        addTypingIndicator();
 
-        // 发送请求
-        $.ajax({
-            url: '/api/ai-data-analysis/chat',
+        var assistantMessageId = 'msg_' + Date.now();
+        addTypingIndicator(assistantMessageId);
+
+        // 使用EventSource进行SSE连接
+        var engineParam = engineId ? '&engine_id=' + engineId : '';
+        var historyJson = encodeURIComponent(JSON.stringify(chatHistory.slice(-10)));
+
+        // 由于EventSource不支持POST，我们需要使用fetch API
+        fetch('/api/ai-data-analysis/chat-stream', {
             method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
                 message: message,
                 engine_id: engineId || undefined,
                 history: chatHistory.slice(-10)
-            }),
-            timeout: 120000,
-            success: function(res) {
-                removeTypingIndicator();
-                isLoading = false;
-                $('#sendBtn').prop('disabled', false);
+            })
+        }).then(response => {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
 
-                if (res.code === 0) {
-                    var reply = res.data.reply;
-                    var toolCalls = res.data.tool_calls || [];
-
-                    addMessage('assistant', reply, toolCalls);
-
-                    // 更新历史
-                    chatHistory.push({role: 'user', content: message});
-                    chatHistory.push({role: 'assistant', content: reply});
-                } else {
-                    addMessage('assistant', '抱歉，出现错误：' + res.msg);
+            function processText({ done, value }) {
+                if (done) {
+                    removeTypingIndicator(assistantMessageId);
+                    isLoading = false;
+                    $('#sendBtn').prop('disabled', false);
+                    return;
                 }
-            },
-            error: function(xhr, status) {
-                removeTypingIndicator();
-                isLoading = false;
-                $('#sendBtn').prop('disabled', false);
 
-                if (status === 'timeout') {
-                    addMessage('assistant', '请求超时，请稍后重试');
-                } else {
-                    addMessage('assistant', '网络错误，请检查连接');
-                }
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // 保留最后不完整的行
+
+                lines.forEach(line => {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            handleSSEMessage(data, assistantMessageId);
+                        } catch (e) {
+                            console.error('解析SSE数据失败:', e);
+                        }
+                    }
+                });
+
+                return reader.read().then(processText);
             }
+
+            return reader.read().then(processText);
+        }).catch(error => {
+            removeTypingIndicator(assistantMessageId);
+            isLoading = false;
+            $('#sendBtn').prop('disabled', false);
+            addMessage('assistant', '连接失败：' + error.message);
         });
+
+        // 更新历史
+        chatHistory.push({role: 'user', content: message});
+    }
+
+    // 处理SSE消息
+    function handleSSEMessage(data, assistantMessageId) {
+        switch(data.type) {
+            case 'start':
+                updateTypingIndicator(assistantMessageId, '正在连接 ' + data.engine + '...');
+                break;
+
+            case 'thinking':
+                updateTypingIndicator(assistantMessageId, 'AI正在思考中...', data.iteration);
+                break;
+
+            case 'tool_start':
+                var toolNames = {
+                    'get_table_list': '获取数据库表列表',
+                    'get_table_schema': '获取表结构信息',
+                    'execute_sql_query': '执行SQL查询',
+                    'get_data_statistics': '获取数据统计'
+                };
+                var toolDisplayName = toolNames[data.tool] || data.tool;
+                addToolProgress(assistantMessageId, toolDisplayName, data.args);
+                break;
+
+            case 'tool_result':
+                updateToolProgress(assistantMessageId, data.tool, data.result);
+                break;
+
+            case 'content':
+                removeTypingIndicator(assistantMessageId);
+                addMessage('assistant', data.content, data.tool_calls, assistantMessageId);
+                chatHistory.push({role: 'assistant', content: data.content});
+                break;
+
+            case 'done':
+                isLoading = false;
+                $('#sendBtn').prop('disabled', false);
+                break;
+
+            case 'error':
+                removeTypingIndicator(assistantMessageId);
+                addMessage('assistant', '❌ 错误：' + data.message);
+                isLoading = false;
+                $('#sendBtn').prop('disabled', false);
+                break;
+        }
     }
 
     // 添加消息到对话区
-    function addMessage(role, content, toolCalls) {
+    function addMessage(role, content, toolCalls, messageId) {
         // 清除欢迎消息
         $('.welcome-message').remove();
 
+        messageId = messageId || 'msg_' + Date.now();
         var avatarIcon = role === 'user' ? 'layui-icon-username' : 'layui-icon-auz';
-        var html = '<div class="message ' + role + '">';
+
+        var html = '<div class="message ' + role + '" data-message-id="' + messageId + '">';
         html += '<div class="message-avatar"><i class="layui-icon ' + avatarIcon + '"></i></div>';
+        html += '<div class="message-content-wrapper">';
         html += '<div class="message-content">';
 
         if (role === 'assistant') {
-            // 解析Markdown
-            html += marked.parse(content);
-
-            // 显示工具调用信息
-            if (toolCalls && toolCalls.length > 0) {
-                html += '<div class="tool-calls-info">';
-                html += '<i class="layui-icon layui-icon-set"></i>';
-                html += '执行了 ' + toolCalls.length + ' 次数据库查询';
-                html += '</div>';
-            }
+            // 解析Markdown并高亮代码
+            var parsedContent = marked.parse(content);
+            html += parsedContent;
         } else {
             html += escapeHtml(content);
         }
 
+        html += '</div>';
+
+        // 添加消息操作按钮
+        html += '<div class="message-actions">';
+        html += '<button class="message-action-btn" onclick="copyMessage(\'' + messageId + '\')"><i class="layui-icon layui-icon-file"></i>复制</button>';
+        if (role === 'assistant') {
+            html += '<button class="message-action-btn" onclick="regenerateMessage()"><i class="layui-icon layui-icon-refresh"></i>重新生成</button>';
+            html += '<button class="message-action-btn" onclick="saveAsReport(\'' + messageId + '\')"><i class="layui-icon layui-icon-release"></i>保存为报告</button>';
+        }
+        html += '</div>';
+
         html += '</div></div>';
 
         $('#chatMessages').append(html);
+
+        // 高亮代码块
+        $('#chatMessages pre code').each(function(i, block) {
+            hljs.highlightElement(block);
+        });
+
         scrollToBottom();
     }
 
     // 添加加载动画
-    function addTypingIndicator() {
-        var html = '<div class="message assistant" id="typingIndicator">';
+    function addTypingIndicator(messageId) {
+        var html = '<div class="message assistant" id="' + messageId + '">';
         html += '<div class="message-avatar"><i class="layui-icon layui-icon-auz"></i></div>';
+        html += '<div class="message-content-wrapper">';
         html += '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+        html += '<div class="tool-progress-container"></div>';
+        html += '</div>';
         html += '</div>';
         $('#chatMessages').append(html);
         scrollToBottom();
     }
 
-    function removeTypingIndicator() {
-        $('#typingIndicator').remove();
+    function removeTypingIndicator(messageId) {
+        $('#' + messageId + ' .typing-indicator').remove();
+        if ($('#' + messageId + ' .tool-progress-container').children().length === 0) {
+            $('#' + messageId).remove();
+        }
     }
+
+    function updateTypingIndicator(messageId, text, iteration) {
+        var html = '<div class="typing-indicator">';
+        html += '<span></span><span></span><span></span>';
+        html += '<div class="progress-text" style="margin-left: 10px; color: var(--text-secondary);">' + text;
+        if (iteration) {
+            html += ' <span style="color: #667eea;">[' + iteration + ']</span>';
+        }
+        html += '</div></div>';
+        $('#' + messageId + ' .typing-indicator').replaceWith(html);
+        scrollToBottom();
+    }
+
+    // 添加工具调用进度
+    function addToolProgress(messageId, toolName, args) {
+        var argsText = '';
+        if (args && Object.keys(args).length > 0) {
+            argsText = ' - ' + Object.entries(args).map(([k, v]) => k + ': ' + (typeof v === 'string' && v.length > 30 ? v.substring(0, 30) + '...' : v)).join(', ');
+        }
+
+        var html = '<div class="tool-progress" data-tool="' + toolName + '">';
+        html += '<i class="layui-icon layui-icon-loading"></i>';
+        html += '<div class="progress-text">正在执行: <b>' + toolName + '</b>' + argsText + '</div>';
+        html += '<div class="progress-badge">执行中</div>';
+        html += '</div>';
+
+        $('#' + messageId + ' .tool-progress-container').append(html);
+        scrollToBottom();
+    }
+
+    function updateToolProgress(messageId, toolName, result) {
+        var $progress = $('#' + messageId + ' .tool-progress[data-tool="' + toolName + '"]');
+        $progress.find('.layui-icon-loading').removeClass('layui-icon-loading').addClass('layui-icon-ok').css('color', '#11998e');
+        $progress.find('.progress-badge').text('完成').css('background', '#11998e');
+        $progress.css('animation', 'none');
+
+        // 添加结果预览（如果有数据）
+        if (result && result.data && result.data.length > 0) {
+            var resultText = '查询到 ' + result.data.length + ' 条数据';
+            $progress.find('.progress-text').append('<span style="color: #11998e; margin-left: 10px;">(' + resultText + ')</span>');
+        } else if (result && result.tables) {
+            var resultText = '找到 ' + result.tables.length + ' 个表';
+            $progress.find('.progress-text').append('<span style="color: #11998e; margin-left: 10px;">(' + resultText + ')</span>');
+        }
+
+        scrollToBottom();
+    }
+
+    // 复制消息内容
+    window.copyMessage = function(messageId) {
+        var $message = $('[data-message-id="' + messageId + '"]');
+        var content = $message.find('.message-content').text();
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(content).then(function() {
+                layer.msg('已复制到剪贴板', {icon: 1, time: 1500});
+            }).catch(function() {
+                fallbackCopyText(content);
+            });
+        } else {
+            fallbackCopyText(content);
+        }
+    };
+
+    function fallbackCopyText(text) {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            layer.msg('已复制到剪贴板', {icon: 1, time: 1500});
+        } catch (e) {
+            layer.msg('复制失败，请手动复制', {icon: 2});
+        }
+        document.body.removeChild(textarea);
+    }
+
+    // 重新生成消息
+    window.regenerateMessage = function() {
+        if (chatHistory.length < 2) return;
+
+        // 移除最后一条AI回复
+        chatHistory.pop();
+        $('.message.assistant:last').remove();
+
+        // 重新发送最后一条用户消息
+        var lastUserMessage = chatHistory[chatHistory.length - 1].content;
+        chatHistory.pop();
+
+        $('#messageInput').val(lastUserMessage);
+        sendMessage();
+    };
+
+    // 保存为报告
+    window.saveAsReport = function(messageId) {
+        var $message = $('[data-message-id="' + messageId + '"]');
+        var content = $message.find('.message-content').text();
+        var htmlContent = $message.find('.message-content').html();
+
+        // 弹出对话框让用户输入报告信息
+        layer.open({
+            type: 1,
+            title: '<i class="layui-icon layui-icon-file"></i> 保存为报告',
+            area: ['600px', '500px'],
+            content: `
+                <div style="padding: 20px;">
+                    <form class="layui-form" lay-filter="reportForm">
+                        <div class="layui-form-item">
+                            <label class="layui-form-label">报告标题<span style="color: red;">*</span></label>
+                            <div class="layui-input-block">
+                                <input type="text" name="title" required lay-verify="required" placeholder="请输入报告标题" class="layui-input">
+                            </div>
+                        </div>
+                        <div class="layui-form-item">
+                            <label class="layui-form-label">行业分类</label>
+                            <div class="layui-input-block">
+                                <input type="text" name="industry" placeholder="如：政务、金融、医疗等" class="layui-input">
+                            </div>
+                        </div>
+                        <div class="layui-form-item layui-form-text">
+                            <label class="layui-form-label">报告摘要</label>
+                            <div class="layui-input-block">
+                                <textarea name="summary" placeholder="请输入报告摘要（选填）" class="layui-textarea" rows="5"></textarea>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            `,
+            btn: ['保存', '取消'],
+            yes: function(index, layero) {
+                var formData = {
+                    title: layero.find('input[name="title"]').val(),
+                    industry: layero.find('input[name="industry"]').val(),
+                    summary: layero.find('textarea[name="summary"]').val(),
+                    content: content,
+                    ai_engine_id: currentEngineId || null
+                };
+
+                if (!formData.title) {
+                    layer.msg('请输入报告标题', {icon: 2});
+                    return;
+                }
+
+                // 发送保存请求
+                var loadIndex = layer.load(1, {shade: [0.3, '#000']});
+                $.ajax({
+                    url: '/api/reports/save',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(formData),
+                    success: function(res) {
+                        layer.close(loadIndex);
+                        if (res.code === 0) {
+                            layer.close(index);
+                            layer.msg('报告保存成功', {icon: 1, time: 2000}, function() {
+                                // 询问是否跳转到报告管理页面
+                                layer.confirm('报告已保存,是否立即查看?', {
+                                    icon: 3,
+                                    title: '提示',
+                                    btn: ['查看报告', '继续对话']
+                                }, function(idx) {
+                                    window.location.href = '/admin/report-management';
+                                });
+                            });
+                        } else {
+                            layer.msg(res.msg || '保存失败', {icon: 2});
+                        }
+                    },
+                    error: function() {
+                        layer.close(loadIndex);
+                        layer.msg('网络错误', {icon: 2});
+                    }
+                });
+            }
+        });
+    };
+
+    // 清空对话
+    $('#clearChatBtn').click(function() {
+        layer.confirm('确定要清空所有对话记录吗？', {
+            icon: 3,
+            title: '提示',
+            btn: ['确定', '取消']
+        }, function(index) {
+            chatHistory = [];
+            $('#chatMessages').html('<div class="welcome-message"><i class="layui-icon layui-icon-console"></i><h4>对话已清空</h4><p>可以开始新的对话了</p></div>');
+            layer.close(index);
+            layer.msg('对话已清空', {icon: 1});
+        });
+    });
+
+    // 导出对话
+    $('#exportChatBtn').click(function() {
+        if (chatHistory.length === 0) {
+            layer.msg('暂无对话记录', {icon: 2});
+            return;
+        }
+
+        var exportText = '# AI数据分析对话记录\n\n';
+        exportText += '导出时间: ' + new Date().toLocaleString() + '\n\n';
+        exportText += '---\n\n';
+
+        chatHistory.forEach(function(msg, index) {
+            exportText += '## ' + (msg.role === 'user' ? '用户' : 'AI助手') + '\n\n';
+            exportText += msg.content + '\n\n';
+            exportText += '---\n\n';
+        });
+
+        var blob = new Blob([exportText], { type: 'text/markdown' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'ai-chat-' + Date.now() + '.md';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        layer.msg('导出成功', {icon: 1});
+    });
 
     // 滚动到底部
     function scrollToBottom() {
         var container = $('#chatMessages')[0];
-        container.scrollTop = container.scrollHeight;
+        setTimeout(function() {
+            container.scrollTop = container.scrollHeight;
+        }, 100);
     }
 
     // HTML转义
@@ -798,7 +1451,7 @@ layui.use(['layer'], function(){
     // 自动调整文本框高度
     function autoResize(textarea) {
         textarea.style.height = 'auto';
-        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        textarea.style.height = Math.min(textarea.scrollHeight, 140) + 'px';
     }
 
     // 事件绑定
@@ -817,7 +1470,8 @@ layui.use(['layer'], function(){
     $('.quick-btn, .example-query').click(function() {
         var question = $(this).data('q');
         $('#messageInput').val(question);
-        sendMessage();
+        autoResize($('#messageInput')[0]);
+        $('#messageInput').focus();
     });
 
     // 初始化

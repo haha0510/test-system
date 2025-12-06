@@ -168,6 +168,12 @@ class CollectedNews(db.Model):
     rule_id = db.Column(db.Integer, db.ForeignKey('crawl_rules.id'))  # 使用的采集规则ID
     rule_used = db.Column(db.String(100))  # 使用的采集规则名称
 
+    # 地理信息
+    province = db.Column(db.String(50))  # 省份/地区
+    city = db.Column(db.String(50))  # 城市
+    region_level = db.Column(db.String(20))  # 地区级别 (国, 省, 市, 县)
+    geo_extracted_at = db.Column(db.DateTime)  # 地理信息提取时间
+
     # 元数据
     collected_by = db.Column(db.Integer, db.ForeignKey('users.id'))  # 采集人
     created_at = db.Column(db.DateTime, default=datetime.now)
@@ -196,6 +202,10 @@ class CollectedNews(db.Model):
             'deep_collected_at': self.deep_collected_at.strftime('%Y-%m-%d %H:%M:%S') if self.deep_collected_at else None,
             'rule_id': self.rule_id,
             'rule_used': self.rule_used,
+            'province': self.province,
+            'city': self.city,
+            'region_level': self.region_level,
+            'geo_extracted_at': self.geo_extracted_at.strftime('%Y-%m-%d %H:%M:%S') if self.geo_extracted_at else None,
             'collected_by': self.collected_by,
             'collector_name': self.collector.username if self.collector else '-',
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S')
@@ -408,3 +418,66 @@ class CrawlerConfig(db.Model):
 
     def __repr__(self):
         return f'<CrawlerConfig {self.name}>'
+
+
+class AIReport(db.Model):
+    """AI生成的报告"""
+    __tablename__ = 'ai_reports'
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(500), nullable=False)  # 报告标题
+    content = db.Column(db.Text, nullable=False)  # 报告内容(Markdown格式)
+    industry = db.Column(db.String(100))  # 行业分类
+    summary = db.Column(db.Text)  # 报告摘要
+
+    # 元数据
+    query_sql = db.Column(db.Text)  # 使用的SQL查询语句
+    data_snapshot = db.Column(db.Text)  # 数据快照(JSON格式)
+    ai_engine_id = db.Column(db.Integer, db.ForeignKey('ai_engines.id'))  # 使用的AI引擎
+
+    # 统计信息
+    word_count = db.Column(db.Integer, default=0)  # 字数统计
+    view_count = db.Column(db.Integer, default=0)  # 查看次数
+    download_count = db.Column(db.Integer, default=0)  # 下载次数
+
+    # 创建信息
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # 创建人
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # 关联
+    creator = db.relationship('User', backref=db.backref('ai_reports', lazy='dynamic'))
+    ai_engine = db.relationship('AIEngine', backref=db.backref('generated_reports', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<AIReport {self.title[:30]}...>'
+
+    def to_dict(self):
+        import json
+        data_snapshot = {}
+        if self.data_snapshot:
+            try:
+                data_snapshot = json.loads(self.data_snapshot)
+            except:
+                data_snapshot = {}
+
+        return {
+            'id': self.id,
+            'title': self.title,
+            'content': self.content,
+            'industry': self.industry,
+            'summary': self.summary,
+            'query_sql': self.query_sql,
+            'data_snapshot': data_snapshot,
+            'data_snapshot_str': self.data_snapshot or '',
+            'ai_engine_id': self.ai_engine_id,
+            'ai_engine_name': self.ai_engine.name if self.ai_engine else '-',
+            'word_count': self.word_count,
+            'view_count': self.view_count,
+            'download_count': self.download_count,
+            'created_by': self.created_by,
+            'creator_name': self.creator.username if self.creator else '-',
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'created_date': self.created_at.strftime('%Y-%m-%d')
+        }

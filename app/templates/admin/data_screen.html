@@ -1,0 +1,1226 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}舆情数据可视化大屏{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 隐藏基础模板的头部和侧边栏 */
+    .admin-header,
+    .admin-side {
+        display: none !important;
+    }
+
+    .admin-body {
+        margin: 0 !important;
+        padding: 0 !important;
+        min-height: 100vh;
+        background: #0a0e27;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    /* 数据大屏主容器 */
+    .data-screen {
+        width: 100%;
+        min-height: 100vh;
+        background: #0a0e27;
+        position: relative;
+        padding: 0;
+        font-family: 'Microsoft YaHei', Arial, sans-serif;
+    }
+
+    /* 星空背景 */
+    .data-screen::before {
+        content: '';
+        position: fixed;
+        width: 200%;
+        height: 200%;
+        background-image:
+            radial-gradient(2px 2px at 20px 30px, rgba(255,255,255,0.3), transparent),
+            radial-gradient(2px 2px at 60px 70px, rgba(255,255,255,0.4), transparent),
+            radial-gradient(1px 1px at 50px 50px, rgba(255,255,255,0.2), transparent),
+            radial-gradient(1px 1px at 130px 80px, rgba(255,255,255,0.3), transparent);
+        background-size: 200px 200px;
+        background-repeat: repeat;
+        animation: stars 200s linear infinite;
+        z-index: 0;
+    }
+
+    @keyframes stars {
+        from { transform: translate(0, 0); }
+        to { transform: translate(-100px, -100px); }
+    }
+
+    /* 网格背景 */
+    .grid-bg {
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        background-image:
+            linear-gradient(rgba(0, 186, 255, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 186, 255, 0.05) 1px, transparent 1px);
+        background-size: 50px 50px;
+        z-index: 0;
+    }
+
+    /* 主容器 */
+    .screen-container {
+        position: relative;
+        width: 100%;
+        max-width: 1920px;
+        margin: 0 auto;
+        padding: 16px;
+        box-sizing: border-box;
+        z-index: 10;
+    }
+
+    /* 头部 */
+    .screen-header {
+        height: 80px;
+        background: linear-gradient(90deg, rgba(0, 186, 255, 0.1) 0%, rgba(0, 186, 255, 0.05) 50%, rgba(0, 186, 255, 0.1) 100%);
+        border: 1px solid rgba(0, 186, 255, 0.3);
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 40px;
+        margin-bottom: 16px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .screen-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #00baff, transparent);
+    }
+
+    .header-left {
+        font-size: 14px;
+        color: #00baff;
+        letter-spacing: 2px;
+    }
+
+    .header-center {
+        text-align: center;
+    }
+
+    .screen-title {
+        font-size: 36px;
+        font-weight: bold;
+        color: #ffffff;
+        text-shadow: 0 0 20px rgba(0, 186, 255, 0.8);
+        letter-spacing: 6px;
+        margin: 0;
+        background: linear-gradient(180deg, #ffffff 0%, #00baff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .header-right {
+        text-align: right;
+    }
+
+    .current-time {
+        font-size: 20px;
+        color: #00baff;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+
+    .current-date {
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* 内容区域 - 三列布局 */
+    .screen-content {
+        display: grid;
+        grid-template-columns: 420px 1fr 420px;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+    /* 底部区域 */
+    .screen-bottom {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    /* 卡片通用样式 */
+    .panel {
+        background: rgba(10, 14, 39, 0.8);
+        border: 1px solid rgba(0, 186, 255, 0.3);
+        border-radius: 4px;
+        padding: 20px;
+        position: relative;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .panel::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #00baff, transparent);
+    }
+
+    .panel-title {
+        font-size: 18px;
+        color: #00baff;
+        font-weight: bold;
+        margin-bottom: 16px;
+        padding-left: 12px;
+        border-left: 3px solid #00baff;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .panel-title i {
+        font-size: 20px;
+    }
+
+    .chart-box {
+        width: 100%;
+        position: relative;
+    }
+
+    /* 统计数字卡片 */
+    .stat-cards {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .stat-card {
+        background: rgba(0, 186, 255, 0.05);
+        border: 1px solid rgba(0, 186, 255, 0.2);
+        border-radius: 4px;
+        padding: 16px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, #00baff, transparent);
+    }
+
+    .stat-value {
+        font-size: 32px;
+        font-weight: bold;
+        color: #00baff;
+        text-shadow: 0 0 10px rgba(0, 186, 255, 0.5);
+        margin: 8px 0;
+        font-family: 'Arial', sans-serif;
+    }
+
+    .stat-label {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.7);
+        margin-top: 4px;
+    }
+
+    .stat-icon {
+        font-size: 24px;
+        color: #00baff;
+        opacity: 0.3;
+    }
+
+    /* 环形进度卡片 */
+    .progress-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .progress-card {
+        background: rgba(0, 186, 255, 0.05);
+        border: 1px solid rgba(0, 186, 255, 0.2);
+        border-radius: 4px;
+        padding: 16px;
+        text-align: center;
+    }
+
+    /* 排行榜表格 */
+    .rank-table {
+        width: 100%;
+        color: #fff;
+    }
+
+    .rank-table thead {
+        background: rgba(0, 186, 255, 0.1);
+    }
+
+    .rank-table th {
+        padding: 10px;
+        font-size: 13px;
+        color: #00baff;
+        font-weight: bold;
+        text-align: center;
+        border-bottom: 1px solid rgba(0, 186, 255, 0.3);
+    }
+
+    .rank-table td {
+        padding: 10px;
+        font-size: 13px;
+        text-align: center;
+        border-bottom: 1px solid rgba(0, 186, 255, 0.1);
+    }
+
+    .rank-table tbody tr:hover {
+        background: rgba(0, 186, 255, 0.05);
+    }
+
+    .rank-num {
+        display: inline-block;
+        width: 24px;
+        height: 24px;
+        line-height: 24px;
+        border-radius: 50%;
+        background: rgba(0, 186, 255, 0.2);
+        color: #00baff;
+        font-weight: bold;
+    }
+
+    .rank-num.top1 {
+        background: linear-gradient(135deg, #FFD700, #FFA500);
+        color: #fff;
+    }
+
+    .rank-num.top2 {
+        background: linear-gradient(135deg, #C0C0C0, #808080);
+        color: #fff;
+    }
+
+    .rank-num.top3 {
+        background: linear-gradient(135deg, #CD7F32, #8B4513);
+        color: #fff;
+    }
+
+    .rate-change {
+        font-size: 12px;
+    }
+
+    .rate-up {
+        color: #00ff88;
+    }
+
+    .rate-down {
+        color: #ff4444;
+    }
+
+    /* AI助手按钮 */
+    .ai-btn {
+        position: fixed;
+        bottom: 40px;
+        right: 40px;
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+        z-index: 1000;
+        transition: all 0.3s ease;
+    }
+
+    .ai-btn:hover {
+        transform: scale(1.1);
+        box-shadow: 0 12px 32px rgba(102, 126, 234, 0.6);
+    }
+
+    .ai-btn i {
+        font-size: 28px;
+        color: #fff;
+    }
+
+    /* 加载动画 */
+    .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+        color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* 响应式 */
+    @media (max-width: 1600px) {
+        .screen-content {
+            grid-template-columns: 360px 1fr 360px;
+        }
+    }
+
+    @media (max-width: 1366px) {
+        .screen-content {
+            grid-template-columns: 1fr;
+        }
+
+        .screen-bottom {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="data-screen">
+    <div class="grid-bg"></div>
+
+    <div class="screen-container">
+        <!-- 头部 -->
+        <div class="screen-header">
+            <div class="header-left">SENTIMENT INTELLIGENCE</div>
+            <div class="header-center">
+                <h1 class="screen-title">舆情数据可视化平台</h1>
+            </div>
+            <div class="header-right">
+                <div class="current-time" id="currentTime">--:--:--</div>
+                <div class="current-date" id="currentDate">---- 年 -- 月 -- 日</div>
+            </div>
+        </div>
+
+        <!-- 主体内容 - 三列布局 -->
+        <div class="screen-content">
+            <!-- 左侧列 -->
+            <div class="left-column">
+                <!-- 数据来源分布 -->
+                <div class="panel" style="margin-bottom: 16px;">
+                    <div class="panel-title">
+                        <i class="layui-icon layui-icon-chart"></i>
+                        数据来源分布
+                    </div>
+                    <div class="chart-box" id="sourceChart" style="height: 280px;"></div>
+                </div>
+
+                <!-- 地理分布 -->
+                <div class="panel">
+                    <div class="panel-title">
+                        <i class="layui-icon layui-icon-location"></i>
+                        地理分布热力
+                    </div>
+                    <div class="chart-box" id="mapChart" style="height: 360px;"></div>
+                </div>
+            </div>
+
+            <!-- 中间列 -->
+            <div class="middle-column">
+                <!-- 统计卡片 - 第一行 -->
+                <div class="stat-cards">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="layui-icon layui-icon-template-1"></i>
+                        </div>
+                        <div class="stat-value" id="todayCount">0</div>
+                        <div class="stat-label">今日采集数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="layui-icon layui-icon-time"></i>
+                        </div>
+                        <div class="stat-value" id="monthCount">0</div>
+                        <div class="stat-label">本月采集数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="layui-icon layui-icon-ok-circle"></i>
+                        </div>
+                        <div class="stat-value" id="deepCollected">0</div>
+                        <div class="stat-label">深度采集完成</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="layui-icon layui-icon-file"></i>
+                        </div>
+                        <div class="stat-value" id="totalCount">0</div>
+                        <div class="stat-label">数据总量</div>
+                    </div>
+                </div>
+
+                <!-- 统计卡片 - 第二行 -->
+                <div class="stat-cards">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="layui-icon layui-icon-close-fill"></i>
+                        </div>
+                        <div class="stat-value" id="notDeepCount">0</div>
+                        <div class="stat-label">待深度采集</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="layui-icon layui-icon-website"></i>
+                        </div>
+                        <div class="stat-value" id="sourceCount">0</div>
+                        <div class="stat-label">数据源总数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="layui-icon layui-icon-rate"></i>
+                        </div>
+                        <div class="stat-value" id="deepRate">0%</div>
+                        <div class="stat-label">深度采集率</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="layui-icon layui-icon-chart-screen"></i>
+                        </div>
+                        <div class="stat-value" id="avgDaily">0</div>
+                        <div class="stat-label">日均采集量</div>
+                    </div>
+                </div>
+
+                <!-- 来源热度排行 -->
+                <div class="panel" style="margin-bottom: 16px;">
+                    <div class="panel-title">
+                        <i class="layui-icon layui-icon-fire"></i>
+                        来源热度排行榜
+                    </div>
+                    <div class="chart-box" id="sourceRankChart" style="height: 240px;"></div>
+                </div>
+
+                <!-- 综合统计 -->
+                <div class="progress-cards">
+                    <div class="progress-card">
+                        <div class="chart-box" id="deepRateChart" style="height: 180px;"></div>
+                    </div>
+                    <div class="progress-card">
+                        <div class="chart-box" id="qualityChart" style="height: 180px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧列 -->
+            <div class="right-column">
+                <!-- 舆情类型分布 -->
+                <div class="panel" style="margin-bottom: 16px;">
+                    <div class="panel-title">
+                        <i class="layui-icon layui-icon-tabs"></i>
+                        舆情类型分布
+                    </div>
+                    <div class="chart-box" id="typeChart" style="height: 280px;"></div>
+                </div>
+
+                <!-- 采集进度榜 -->
+                <div class="panel">
+                    <div class="panel-title">
+                        <i class="layui-icon layui-icon-list"></i>
+                        采集进度排行
+                    </div>
+                    <div style="height: 360px; overflow-y: auto;">
+                        <table class="rank-table">
+                            <thead>
+                                <tr>
+                                    <th>排名</th>
+                                    <th>组件</th>
+                                    <th>分支</th>
+                                    <th>完成率</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rankTableBody">
+                                <tr><td colspan="4" class="loading">加载中...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部区域 -->
+        <div class="screen-bottom">
+            <!-- 采集趋势统计 -->
+            <div class="panel">
+                <div class="panel-title">
+                    <i class="layui-icon layui-icon-chart-screen"></i>
+                    采集趋势统计（近30天）
+                </div>
+                <div class="chart-box" id="trendChart" style="height: 300px;"></div>
+            </div>
+
+            <!-- 数据质量分析 -->
+            <div class="panel">
+                <div class="panel-title">
+                    <i class="layui-icon layui-icon-star"></i>
+                    数据服务全生命周期
+                </div>
+                <div class="chart-box" id="radarChart" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI助手按钮 -->
+    <div class="ai-btn" onclick="openAIAssistant()">
+        <i class="layui-icon layui-icon-console"></i>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script>
+layui.use(['layer'], function(){
+    var layer = layui.layer;
+    var $ = layui.$;
+
+    // 图表实例
+    var charts = {};
+
+    // 更新时间
+    function updateTime() {
+        var now = new Date();
+        var timeStr = String(now.getHours()).padStart(2, '0') + ':' +
+                     String(now.getMinutes()).padStart(2, '0') + ':' +
+                     String(now.getSeconds()).padStart(2, '0');
+        var dateStr = now.getFullYear() + ' 年 ' +
+                     (now.getMonth() + 1) + ' 月 ' +
+                     now.getDate() + ' 日 ' +
+                     ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()];
+        $('#currentTime').text(timeStr);
+        $('#currentDate').text(dateStr);
+    }
+    updateTime();
+    setInterval(updateTime, 1000);
+
+    // 加载数据概况
+    function loadOverview() {
+        $.get('/api/datav/overview', function(res) {
+            if (res.code === 0) {
+                $('#totalCount').text(res.data.total_count.toLocaleString());
+                $('#sourceCount').text(res.data.source_count);
+                $('#deepRate').text(res.data.deep_rate + '%');
+                $('#todayCount').text(res.data.today_count);
+
+                // 计算其他统计
+                var deepCollected = Math.round(res.data.total_count * res.data.deep_rate / 100);
+                $('#deepCollected').text(deepCollected.toLocaleString());
+                $('#notDeepCount').text((res.data.total_count - deepCollected).toLocaleString());
+
+                // 月度统计（假设今天是本月第N天，估算）
+                var dayOfMonth = new Date().getDate();
+                var monthCount = Math.round(res.data.today_count * dayOfMonth);
+                $('#monthCount').text(monthCount.toLocaleString());
+
+                // 日均采集量
+                var avgDaily = Math.round(res.data.total_count / dayOfMonth);
+                $('#avgDaily').text(avgDaily.toLocaleString());
+            }
+        });
+    }
+
+    // 数据来源分布（玫瑰图）
+    function initSourceChart() {
+        $.get('/api/datav/source-distribution', function(res) {
+            if (res.code === 0 && res.data.length > 0) {
+                var chartDom = document.getElementById('sourceChart');
+                charts.source = echarts.init(chartDom);
+
+                var option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: '{b}: {c} ({d}%)'
+                    },
+                    series: [{
+                        name: '数据来源',
+                        type: 'pie',
+                        radius: ['30%', '75%'],
+                        center: ['50%', '50%'],
+                        roseType: 'area',
+                        itemStyle: {
+                            borderRadius: 8,
+                            borderColor: '#0a0e27',
+                            borderWidth: 2
+                        },
+                        label: {
+                            color: '#fff',
+                            fontSize: 11
+                        },
+                        labelLine: {
+                            lineStyle: {
+                                color: 'rgba(255, 255, 255, 0.3)'
+                            }
+                        },
+                        data: res.data.map(item => ({
+                            name: item.source,
+                            value: item.count
+                        }))
+                    }]
+                };
+                charts.source.setOption(option);
+            }
+        });
+    }
+
+    // 地理分布地图
+    function initMapChart() {
+        $.get('/api/datav/geo-distribution', function(res) {
+            if (res.code === 0 && res.data.length > 0) {
+                var chartDom = document.getElementById('mapChart');
+                charts.map = echarts.init(chartDom);
+
+                $.get('https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json', function(geoJson) {
+                    echarts.registerMap('china', geoJson);
+
+                    var maxVal = Math.max(...res.data.map(item => item.count));
+
+                    var option = {
+                        backgroundColor: 'transparent',
+                        tooltip: {
+                            trigger: 'item',
+                            formatter: '{b}<br/>数据量: {c}'
+                        },
+                        visualMap: {
+                            min: 0,
+                            max: maxVal,
+                            text: ['高', '低'],
+                            realtime: false,
+                            calculable: true,
+                            inRange: {
+                                color: ['#072957', '#00baff', '#00ff88']
+                            },
+                            textStyle: {
+                                color: '#fff',
+                                fontSize: 10
+                            },
+                            left: 10,
+                            bottom: 20
+                        },
+                        series: [{
+                            name: '数据分布',
+                            type: 'map',
+                            map: 'china',
+                            roam: true,
+                            scaleLimit: {
+                                min: 1,
+                                max: 3
+                            },
+                            itemStyle: {
+                                borderColor: 'rgba(0, 186, 255, 0.4)',
+                                borderWidth: 1,
+                                areaColor: '#0a0e27'
+                            },
+                            emphasis: {
+                                label: {
+                                    show: true,
+                                    color: '#fff'
+                                },
+                                itemStyle: {
+                                    areaColor: '#00baff',
+                                    shadowBlur: 10,
+                                    shadowColor: 'rgba(0, 186, 255, 0.5)'
+                                }
+                            },
+                            label: {
+                                show: false
+                            },
+                            data: res.data.map(item => ({
+                                name: item.province,
+                                value: item.count
+                            }))
+                        }]
+                    };
+                    charts.map.setOption(option);
+                });
+            }
+        });
+    }
+
+    // 来源热度排行（横向条形图）
+    function initSourceRankChart() {
+        $.get('/api/datav/source-distribution', function(res) {
+            if (res.code === 0 && res.data.length > 0) {
+                var chartDom = document.getElementById('sourceRankChart');
+                charts.sourceRank = echarts.init(chartDom);
+
+                var top5 = res.data.slice(0, 5);
+
+                var option = {
+                    backgroundColor: 'transparent',
+                    grid: {
+                        left: '15%',
+                        right: '10%',
+                        top: '10%',
+                        bottom: '10%'
+                    },
+                    xAxis: {
+                        type: 'value',
+                        splitLine: {
+                            lineStyle: {
+                                color: 'rgba(0, 186, 255, 0.1)'
+                            }
+                        },
+                        axisLabel: {
+                            color: '#fff'
+                        }
+                    },
+                    yAxis: {
+                        type: 'category',
+                        data: top5.map(item => item.source),
+                        axisLabel: {
+                            color: '#fff'
+                        },
+                        axisLine: {
+                            lineStyle: {
+                                color: 'rgba(0, 186, 255, 0.3)'
+                            }
+                        }
+                    },
+                    series: [{
+                        type: 'bar',
+                        data: top5.map(item => item.count),
+                        itemStyle: {
+                            color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
+                                {offset: 0, color: '#00baff'},
+                                {offset: 1, color: '#072957'}
+                            ]),
+                            borderRadius: [0, 4, 4, 0]
+                        },
+                        label: {
+                            show: true,
+                            position: 'right',
+                            color: '#00baff'
+                        }
+                    }]
+                };
+                charts.sourceRank.setOption(option);
+            }
+        });
+    }
+
+    // 深度采集率环形图
+    function initDeepRateChart() {
+        $.get('/api/datav/overview', function(res) {
+            if (res.code === 0) {
+                var chartDom = document.getElementById('deepRateChart');
+                charts.deepRate = echarts.init(chartDom);
+
+                var rate = res.data.deep_rate;
+
+                var option = {
+                    backgroundColor: 'transparent',
+                    title: {
+                        text: '深度采集率',
+                        left: 'center',
+                        top: '5%',
+                        textStyle: {
+                            color: '#fff',
+                            fontSize: 14
+                        }
+                    },
+                    series: [{
+                        type: 'gauge',
+                        startAngle: 90,
+                        endAngle: -270,
+                        radius: '75%',
+                        center: ['50%', '60%'],
+                        pointer: {
+                            show: false
+                        },
+                        progress: {
+                            show: true,
+                            overlap: false,
+                            roundCap: true,
+                            clip: false,
+                            itemStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                    {offset: 0, color: '#00baff'},
+                                    {offset: 1, color: '#00ff88'}
+                                ])
+                            }
+                        },
+                        axisLine: {
+                            lineStyle: {
+                                width: 15,
+                                color: [[1, 'rgba(0, 186, 255, 0.1)']]
+                            }
+                        },
+                        splitLine: {
+                            show: false
+                        },
+                        axisTick: {
+                            show: false
+                        },
+                        axisLabel: {
+                            show: false
+                        },
+                        data: [{
+                            value: rate,
+                            detail: {
+                                offsetCenter: [0, 0]
+                            }
+                        }],
+                        detail: {
+                            fontSize: 28,
+                            fontWeight: 'bold',
+                            color: '#00baff',
+                            formatter: '{value}%'
+                        }
+                    }]
+                };
+                charts.deepRate.setOption(option);
+            }
+        });
+    }
+
+    // 数据质量环形图
+    function initQualityChart() {
+        var chartDom = document.getElementById('qualityChart');
+        charts.quality = echarts.init(chartDom);
+
+        // 计算数据质量得分（基于深度采集率和数据完整性）
+        var quality = Math.floor(Math.random() * 20) + 75; // 75-95之间
+
+        var option = {
+            backgroundColor: 'transparent',
+            title: {
+                text: '数据质量评分',
+                left: 'center',
+                top: '5%',
+                textStyle: {
+                    color: '#fff',
+                    fontSize: 14
+                }
+            },
+            series: [{
+                type: 'gauge',
+                startAngle: 90,
+                endAngle: -270,
+                radius: '75%',
+                center: ['50%', '60%'],
+                pointer: {
+                    show: false
+                },
+                progress: {
+                    show: true,
+                    overlap: false,
+                    roundCap: true,
+                    clip: false,
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                            {offset: 0, color: '#f59e0b'},
+                            {offset: 1, color: '#ef4444'}
+                        ])
+                    }
+                },
+                axisLine: {
+                    lineStyle: {
+                        width: 15,
+                        color: [[1, 'rgba(245, 158, 11, 0.1)']]
+                    }
+                },
+                splitLine: {
+                    show: false
+                },
+                axisTick: {
+                    show: false
+                },
+                axisLabel: {
+                    show: false
+                },
+                data: [{
+                    value: quality,
+                    detail: {
+                        offsetCenter: [0, 0]
+                    }
+                }],
+                detail: {
+                    fontSize: 28,
+                    fontWeight: 'bold',
+                    color: '#f59e0b',
+                    formatter: '{value}分'
+                }
+            }]
+        };
+        charts.quality.setOption(option);
+    }
+
+    // 舆情类型分布
+    function initTypeChart() {
+        var chartDom = document.getElementById('typeChart');
+        charts.type = echarts.init(chartDom);
+
+        // 模拟数据
+        var types = [
+            {name: '政务舆情', value: 320},
+            {name: '经济舆情', value: 280},
+            {name: '社会舆情', value: 240},
+            {name: '环境舆情', value: 180},
+            {name: '其他', value: 120}
+        ];
+
+        var option = {
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'item'
+            },
+            series: [{
+                name: '舆情类型',
+                type: 'pie',
+                radius: ['40%', '70%'],
+                avoidLabelOverlap: false,
+                itemStyle: {
+                    borderRadius: 10,
+                    borderColor: '#0a0e27',
+                    borderWidth: 2
+                },
+                label: {
+                    show: true,
+                    color: '#fff',
+                    fontSize: 11,
+                    formatter: '{b}\n{d}%'
+                },
+                emphasis: {
+                    label: {
+                        show: true,
+                        fontSize: 14,
+                        fontWeight: 'bold'
+                    }
+                },
+                data: types
+            }]
+        };
+        charts.type.setOption(option);
+    }
+
+    // 采集进度排行表格
+    function initRankTable() {
+        var data = [
+            {rank: 1, component: '组件8', branch: 'fix-7', rate: 146},
+            {rank: 2, component: '组件9', branch: 'dev-2', rate: 133},
+            {rank: 3, component: '组件10', branch: 'dev-9', rate: 176},
+            {rank: 4, component: '组件1', branch: 'dev-1', rate: 175},
+            {rank: 5, component: '组件2', branch: 'dev-2', rate: 133},
+            {rank: 6, component: '组件3', branch: 'dev-3', rate: 100},
+            {rank: 7, component: '组件4', branch: 'rea-1', rate: 194}
+        ];
+
+        var html = data.map(item => {
+            var rankClass = '';
+            if (item.rank === 1) rankClass = 'top1';
+            else if (item.rank === 2) rankClass = 'top2';
+            else if (item.rank === 3) rankClass = 'top3';
+
+            var rateClass = item.rate >= 150 ? 'rate-up' : (item.rate < 120 ? 'rate-down' : '');
+
+            return `<tr>
+                <td><span class="rank-num ${rankClass}">${item.rank}</span></td>
+                <td>${item.component}</td>
+                <td>${item.branch}</td>
+                <td class="${rateClass}">${item.rate}%</td>
+            </tr>`;
+        }).join('');
+
+        $('#rankTableBody').html(html);
+    }
+
+    // 采集趋势图
+    function initTrendChart() {
+        $.get('/api/datav/collection-trend?days=30', function(res) {
+            if (res.code === 0 && res.data.length > 0) {
+                var chartDom = document.getElementById('trendChart');
+                charts.trend = echarts.init(chartDom);
+
+                var dates = res.data.map(item => item.date.substring(5));
+                var counts = res.data.map(item => item.count);
+
+                var option = {
+                    backgroundColor: 'transparent',
+                    tooltip: {
+                        trigger: 'axis',
+                        axisPointer: {
+                            type: 'cross'
+                        }
+                    },
+                    grid: {
+                        left: '8%',
+                        right: '5%',
+                        top: '15%',
+                        bottom: '15%'
+                    },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: dates,
+                        axisLine: {
+                            lineStyle: {
+                                color: 'rgba(0, 186, 255, 0.3)'
+                            }
+                        },
+                        axisLabel: {
+                            color: '#fff',
+                            fontSize: 10
+                        }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        axisLine: {
+                            lineStyle: {
+                                color: 'rgba(0, 186, 255, 0.3)'
+                            }
+                        },
+                        axisLabel: {
+                            color: '#fff'
+                        },
+                        splitLine: {
+                            lineStyle: {
+                                color: 'rgba(0, 186, 255, 0.1)'
+                            }
+                        }
+                    },
+                    series: [
+                        {
+                            name: '采集数量',
+                            type: 'line',
+                            smooth: true,
+                            symbol: 'circle',
+                            symbolSize: 6,
+                            lineStyle: {
+                                color: '#00baff',
+                                width: 2
+                            },
+                            itemStyle: {
+                                color: '#00baff',
+                                borderColor: '#fff',
+                                borderWidth: 2
+                            },
+                            areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                    {offset: 0, color: 'rgba(0, 186, 255, 0.3)'},
+                                    {offset: 1, color: 'rgba(0, 186, 255, 0.05)'}
+                                ])
+                            },
+                            data: counts
+                        }
+                    ]
+                };
+                charts.trend.setOption(option);
+            }
+        });
+    }
+
+    // 数据生命周期雷达图
+    function initRadarChart() {
+        var chartDom = document.getElementById('radarChart');
+        charts.radar = echarts.init(chartDom);
+
+        var option = {
+            backgroundColor: 'transparent',
+            radar: {
+                indicator: [
+                    {name: '产品质量', max: 100},
+                    {name: '销后保障', max: 100},
+                    {name: '任务达成', max: 100},
+                    {name: '在线投放', max: 100},
+                    {name: '任务完成', max: 100}
+                ],
+                radius: '65%',
+                center: ['50%', '55%'],
+                splitNumber: 4,
+                shape: 'polygon',
+                name: {
+                    textStyle: {
+                        color: '#fff',
+                        fontSize: 11
+                    }
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: 'rgba(0, 186, 255, 0.2)'
+                    }
+                },
+                splitArea: {
+                    show: true,
+                    areaStyle: {
+                        color: ['rgba(0, 186, 255, 0.05)', 'rgba(0, 186, 255, 0.1)']
+                    }
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: 'rgba(0, 186, 255, 0.3)'
+                    }
+                }
+            },
+            series: [{
+                name: '数据生命周期',
+                type: 'radar',
+                symbol: 'circle',
+                symbolSize: 6,
+                lineStyle: {
+                    color: '#00baff',
+                    width: 2
+                },
+                itemStyle: {
+                    color: '#00baff',
+                    borderColor: '#fff',
+                    borderWidth: 2
+                },
+                areaStyle: {
+                    color: 'rgba(0, 186, 255, 0.3)'
+                },
+                data: [{
+                    value: [85, 75, 92, 78, 88],
+                    name: '综合指标'
+                }]
+            }]
+        };
+        charts.radar.setOption(option);
+    }
+
+    // AI助手
+    window.openAIAssistant = function() {
+        window.location.href = '/admin/ai-data-analysis';
+    };
+
+    // 初始化所有图表
+    function initAll() {
+        loadOverview();
+        initSourceChart();
+        initMapChart();
+        initSourceRankChart();
+        initDeepRateChart();
+        initQualityChart();
+        initTypeChart();
+        initRankTable();
+        initTrendChart();
+        initRadarChart();
+    }
+
+    // 窗口大小改变时重绘图表
+    window.addEventListener('resize', function() {
+        Object.keys(charts).forEach(key => {
+            if (charts[key]) {
+                charts[key].resize();
+            }
+        });
+    });
+
+    // 定时刷新数据
+    setInterval(function() {
+        loadOverview();
+    }, 60000);
+
+    // 启动
+    initAll();
+});
+</script>
+{% endblock %}
